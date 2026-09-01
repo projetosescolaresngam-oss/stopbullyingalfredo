@@ -27,7 +27,9 @@ export const saveDenuncia = (denuncia: Omit<Denuncia, 'id' | 'data_envio' | 'sta
     status: 'Em Análise'
   };
   list.unshift(nova);
-  localStorage.setItem(STORAGE_KEY_DENUNCIAS, JSON.stringify(list));
+  try {
+    localStorage.setItem(STORAGE_KEY_DENUNCIAS, JSON.stringify(list));
+  } catch {}
   addLog('DENUNCIA_CRIADA', `Protocolo ${nova.protocolo}`);
   return nova;
 };
@@ -35,14 +37,19 @@ export const saveDenuncia = (denuncia: Omit<Denuncia, 'id' | 'data_envio' | 'sta
 export const updateDenunciaStatus = (id: string, newStatus: ComplaintStatus): Denuncia[] => {
   const list = getDenuncias();
   const updated = list.map(d => d.id === id ? { ...d, status: newStatus } : d);
-  localStorage.setItem(STORAGE_KEY_DENUNCIAS, JSON.stringify(updated));
+  try {
+    localStorage.setItem(STORAGE_KEY_DENUNCIAS, JSON.stringify(updated));
+  } catch {}
   addLog('STATUS_ATUALIZADO', `Denúncia ID ${id} -> ${newStatus}`);
   return updated;
 };
 
 export const saveSOSAlert = (alertData: Omit<SOSAlert, 'id' | 'data_disparo' | 'status'>): SOSAlert => {
-  const raw = localStorage.getItem(STORAGE_KEY_SOS);
-  const list: SOSAlert[] = raw ? JSON.parse(raw) : [];
+  let list: SOSAlert[] = [];
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_SOS);
+    list = raw ? JSON.parse(raw) : [];
+  } catch {}
   const novo: SOSAlert = {
     ...alertData,
     id: Math.random().toString(36).substring(2, 9),
@@ -50,7 +57,9 @@ export const saveSOSAlert = (alertData: Omit<SOSAlert, 'id' | 'data_disparo' | '
     status: 'URGENTE'
   };
   list.unshift(novo);
-  localStorage.setItem(STORAGE_KEY_SOS, JSON.stringify(list));
+  try {
+    localStorage.setItem(STORAGE_KEY_SOS, JSON.stringify(list));
+  } catch {}
   addLog('SOS_DISPARO', `Lat: ${alertData.latitude}, Lng: ${alertData.longitude}`);
   return novo;
 };

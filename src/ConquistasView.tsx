@@ -887,7 +887,10 @@ export const ConquistasView: React.FC<ConquistasViewProps> = ({
         <ItemInspectionModal
           item={inspectedCosmetic}
           onClose={() => setInspectedCosmetic(null)}
-          onEquip={(item) => equipCosmetic(item)}
+          onEquip={() => {
+            equipCosmetic(inspectedCosmetic.category, inspectedCosmetic.id);
+            setInspectedCosmetic(null);
+          }}
           isEquipped={false}
           isUnlocked={true}
         />
