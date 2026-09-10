@@ -254,3 +254,12 @@ export interface RespectGuideTopic {
   reflectionQuote: string;
 }
 
+export interface InstitutionalEmailConfig {
+  emailConselhoTutelar: string;
+  emailEscola: string;
+  telefoneConselhoTutelar?: string;
+  responsavelEnvio?: string;
+  ultimoRelatorioMensalEnviado?: string;
+  agendamentoAtivo?: boolean;
+}
+

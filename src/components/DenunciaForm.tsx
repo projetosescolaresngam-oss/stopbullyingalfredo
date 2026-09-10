@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Denuncia, ViolenceType, SchoolLocation } from '../types';
 import { saveDenuncia } from '../services/storageService';
 import { useApp } from '../AppContext';
@@ -34,7 +34,13 @@ import {
   Shield,
   HelpCircle,
   EyeOff,
-  Search
+  Search,
+  Mic,
+  MicOff,
+  Scale,
+  FileCheck,
+  Lock,
+  Volume2
 } from 'lucide-react';
 
 interface DenunciaFormProps {
@@ -77,7 +83,112 @@ export const DenunciaForm: React.FC<DenunciaFormProps> = ({
   // Passo 4: Relato e Provas (Opcional)
   const [descricao, setDescricao] = useState<string>('');
   const [anexos, setAnexos] = useState<AttachedProof[]>([]);
+  const [previewImage, setPreviewImage] = useState<{ url: string; title: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Termos de Uso das Provas (Imagem e Áudio)
+  const [termoImagemAceito, setTermoImagemAceito] = useState<boolean>(true);
+  const [termoAudioAceito, setTermoAudioAceito] = useState<boolean>(true);
+
+  // Gravador de Áudio em Tempo Real (máx. 1 minuto / 60s)
+  const [isRecording, setIsRecording] = useState<boolean>(false);
+  const [recordingSeconds, setRecordingSeconds] = useState<number>(0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const timerIntervalRef = useRef<any>(null);
+
+  // Limpeza de timer ao desmontar
+  useEffect(() => {
+    return () => {
+      if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+    };
+  }, []);
+
+  // Iniciar Gravação de Áudio
+  const handleStartAudioRecord = async () => {
+    playSfx('click');
+    if (!termoAudioAceito) {
+      alert('Você precisa aceitar a caixa de Termos de Uso de Áudio antes de gravar.');
+      return;
+    }
+
+    try {
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorderRef.current = new MediaRecorder(stream);
+        audioChunksRef.current = [];
+
+        mediaRecorderRef.current.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            audioChunksRef.current.push(event.data);
+          }
+        };
+
+        mediaRecorderRef.current.onstop = () => {
+          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+          const audioUrl = URL.createObjectURL(audioBlob);
+          const newProof: AttachedProof = {
+            id: Math.random().toString(36).substring(2, 9),
+            nome: `relato_audio_voz_${Math.floor(100 + Math.random() * 900)}.webm`,
+            tipo: 'audio',
+            url: audioUrl,
+            tamanho: `${(audioBlob.size / 1024).toFixed(1)} KB`
+          };
+          setAnexos(prev => [...prev, newProof]);
+          stream.getTracks().forEach(track => track.stop());
+        };
+
+        mediaRecorderRef.current.start();
+        setIsRecording(true);
+        setRecordingSeconds(0);
+
+        timerIntervalRef.current = setInterval(() => {
+          setRecordingSeconds(prev => {
+            if (prev >= 59) {
+              handleStopAudioRecord();
+              return 60;
+            }
+            return prev + 1;
+          });
+        }, 1000);
+      } else {
+        // Fallback para simulação caso o navegador não suporte microfone ou esteja bloqueado
+        handleAddSimulatedAudio();
+      }
+    } catch (err) {
+      // Caso haja bloqueio de permissão de microfone
+      handleAddSimulatedAudio();
+    }
+  };
+
+  // Parar Gravação de Áudio
+  const handleStopAudioRecord = () => {
+    playSfx('click');
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
+    }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    }
+    setIsRecording(false);
+  };
+
+  // Simulação de Áudio de Depoimento (máx 1 min)
+  const handleAddSimulatedAudio = () => {
+    playSfx('click');
+    if (!termoAudioAceito) {
+      alert('Você precisa aceitar a caixa de Termos de Uso de Áudio.');
+      return;
+    }
+    const newProof: AttachedProof = {
+      id: Math.random().toString(36).substring(2, 9),
+      nome: `gravacao_depoimento_voz_1min.mp3`,
+      tipo: 'audio',
+      tamanho: '0.9 MB'
+    };
+    setAnexos(prev => [...prev, newProof]);
+  };
 
   // Estado de Submissão e Comprovante
   const [submittedDenuncia, setSubmittedDenuncia] = useState<Denuncia | null>(null);
@@ -114,38 +225,79 @@ export const DenunciaForm: React.FC<DenunciaFormProps> = ({
     if (!files || files.length === 0) return;
     playSfx('click');
 
-    const newProofs: AttachedProof[] = [];
-    Array.from(files).forEach((file, index) => {
-      const isImage = file.type.startsWith('image/');
-      const isAudio = file.type.startsWith('audio/');
-      const proofType = isImage ? 'foto' : isAudio ? 'audio' : 'arquivo';
-      const sizeFormatted = `${(file.size / (1024 * 1024)).toFixed(2)} MB`;
+    // Verificar consentimento prévio dos termos
+    let containsImage = false;
+    let containsAudio = false;
+    Array.from(files).forEach(file => {
+      if (file.type.startsWith('image/')) containsImage = true;
+      if (file.type.startsWith('audio/')) containsAudio = true;
+    });
 
-      const reader = new FileReader();
-      reader.onload = (evt) => {
-        newProofs.push({
-          id: Math.random().toString(36).substring(2, 9),
-          nome: file.name,
-          tipo: proofType,
-          url: evt.target?.result as string,
-          tamanho: sizeFormatted
-        });
-        if (index === files.length - 1) {
-          setAnexos(prev => [...prev, ...newProofs]);
-        }
-      };
-      reader.readAsDataURL(file);
+    if (containsImage && !termoImagemAceito) {
+      alert('Por favor, confirme a caixa de Termos de Uso de Imagem antes de anexar fotos/prints.');
+      e.target.value = '';
+      return;
+    }
+
+    if (containsAudio && !termoAudioAceito) {
+      alert('Por favor, confirme a caixa de Termos de Uso de Áudio antes de anexar arquivos de voz.');
+      e.target.value = '';
+      return;
+    }
+
+    const filesArray = Array.from(files);
+    const readPromises = filesArray.map((file) => {
+      return new Promise<AttachedProof>((resolve) => {
+        const isImage = file.type.startsWith('image/');
+        const isAudio = file.type.startsWith('audio/');
+        const proofType: 'foto' | 'print' | 'audio' | 'arquivo' = isImage ? 'foto' : isAudio ? 'audio' : 'arquivo';
+        const sizeFormatted = `${(file.size / (1024 * 1024)).toFixed(2)} MB`;
+
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+          resolve({
+            id: Math.random().toString(36).substring(2, 9),
+            nome: file.name,
+            tipo: proofType,
+            url: evt.target?.result as string,
+            tamanho: sizeFormatted
+          });
+        };
+        reader.onerror = () => {
+          resolve({
+            id: Math.random().toString(36).substring(2, 9),
+            nome: file.name,
+            tipo: proofType,
+            tamanho: sizeFormatted
+          });
+        };
+        reader.readAsDataURL(file);
+      });
+    });
+
+    Promise.all(readPromises).then((newProofs) => {
+      setAnexos(prev => [...prev, ...newProofs]);
     });
     e.target.value = '';
   };
 
+  // SVG Data URLs para simulação de prints e fotos com visualização real
+  const samplePrintSvg = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="400" height="250" viewBox="0 0 400 250"><rect width="400" height="250" fill="%230f172a" rx="20"/><rect x="20" y="20" width="360" height="40" fill="%231e293b" rx="10"/><circle cx="45" cy="40" r="8" fill="%2306b6d4"/><text x="65" y="45" fill="%23e2e8f0" font-family="sans-serif" font-size="14" font-weight="bold">WhatsApp - Evidência de Print</text><rect x="20" y="80" width="240" height="50" fill="%23334155" rx="14"/><text x="35" y="110" fill="%23f8fafc" font-family="sans-serif" font-size="13">Mensagem gravada como evidência</text><rect x="140" y="150" width="240" height="50" fill="%230284c7" rx="14"/><text x="155" y="180" fill="%23ffffff" font-family="sans-serif" font-size="13">Print registrado com sigilo absoluto</text><text x="20" y="230" fill="%2364748b" font-family="sans-serif" font-size="11">Provas armazenadas no Stop Bullying • EEMTI Alfredo Machado</text></svg>`;
+
+  const sampleFotoSvg = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="400" height="250" viewBox="0 0 400 250"><rect width="400" height="250" fill="%23fef3c7" rx="20"/><rect x="15" y="15" width="370" height="220" fill="%23fffbeb" stroke="%23f59e0b" stroke-width="2.5" stroke-dasharray="6" rx="16"/><text x="35" y="55" fill="%2378350f" font-family="sans-serif" font-size="16" font-weight="bold">📷 Fotografia da Evidência / Bilhete</text><line x1="35" y1="75" x2="365" y2="75" stroke="%23fcd34d" stroke-width="2"/><text x="35" y="115" fill="%2392400e" font-family="sans-serif" font-size="14">Registro de foto de bilhete/ofensa anotada</text><text x="35" y="145" fill="%23b45309" font-family="sans-serif" font-size="13">Fotografia anexada para análise do Conselho Escolar</text><rect x="35" y="175" width="160" height="32" fill="%23d97706" rx="8"/><text x="48" y="196" fill="%23ffffff" font-family="sans-serif" font-size="12" font-weight="bold">FOTO VERIFICADA</text></svg>`;
+
   // Simulação de Print
   const handleAddSimulatedPrint = () => {
     playSfx('click');
+    if (!termoImagemAceito) {
+      alert('Por favor, marque a caixa de Termos de Uso de Imagem para anexar prints.');
+      return;
+    }
     const newProof: AttachedProof = {
       id: Math.random().toString(36).substring(2, 9),
       nome: `print_whatsapp_evidencia_${Math.floor(100 + Math.random() * 900)}.png`,
       tipo: 'print',
+      url: samplePrintSvg,
       tamanho: '1.4 MB'
     };
     setAnexos(prev => [...prev, newProof]);
@@ -154,10 +306,15 @@ export const DenunciaForm: React.FC<DenunciaFormProps> = ({
   // Simulação de Foto de Bilhete
   const handleAddSimulatedFoto = () => {
     playSfx('click');
+    if (!termoImagemAceito) {
+      alert('Por favor, marque a caixa de Termos de Uso de Imagem para anexar fotos.');
+      return;
+    }
     const newProof: AttachedProof = {
       id: Math.random().toString(36).substring(2, 9),
       nome: `foto_bilhete_ofensa_${Math.floor(100 + Math.random() * 900)}.jpg`,
       tipo: 'foto',
+      url: sampleFotoSvg,
       tamanho: '2.1 MB'
     };
     setAnexos(prev => [...prev, newProof]);
@@ -334,11 +491,36 @@ export const DenunciaForm: React.FC<DenunciaFormProps> = ({
               </p>
             </div>
 
-            <div className="p-4 rounded-2xl bg-purple-50/50 border border-purple-100 space-y-1">
+            <div className="p-4 rounded-2xl bg-purple-50/50 border border-purple-100 space-y-2">
               <span className="text-purple-900 font-bold uppercase block text-[10px]">Provas Anexadas:</span>
               <p className="font-semibold text-[#241e33]">
                 {anexos.length > 0 ? `${anexos.length} anexo(s) incluído(s)` : 'Sem anexos (não obrigatório)'}
               </p>
+              {anexos.length > 0 && (
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {anexos.map((anx) => (
+                    <div key={anx.id} className="flex items-center gap-1.5 p-1.5 rounded-xl bg-white border border-purple-200">
+                      {anx.url && (anx.tipo === 'foto' || anx.tipo === 'print' || anx.url.startsWith('data:image')) ? (
+                        <img 
+                          src={anx.url} 
+                          alt={anx.nome} 
+                          className="w-10 h-10 rounded-lg object-cover border border-purple-200 cursor-pointer"
+                          onClick={() => setPreviewImage({ url: anx.url!, title: anx.nome })}
+                          title="Clique para expandir a foto"
+                          referrerPolicy="no-referrer"
+                        />
+                      ) : anx.tipo === 'audio' ? (
+                        <Volume2 className="w-5 h-5 text-rose-600" />
+                      ) : (
+                        <Paperclip className="w-5 h-5 text-purple-600" />
+                      )}
+                      <span className="text-[10px] font-mono text-purple-950 truncate max-w-[100px]">
+                        {anx.nome}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
@@ -1004,12 +1186,12 @@ export const DenunciaForm: React.FC<DenunciaFormProps> = ({
             </div>
 
             {/* Seção: Anexar Provas */}
-            <div className="space-y-3">
+            <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Paperclip className="w-4 h-4 text-purple-600" />
                   <label className="text-xs font-black uppercase text-purple-900 tracking-wider">
-                    Anexar Provas (Fotos, Bilhetes ou Prints)
+                    Anexar Provas (Fotos, Prints ou Áudio de até 1 Minuto)
                   </label>
                   <span className="text-[10px] font-bold text-purple-800 bg-purple-100 px-2 py-0.5 rounded-full border border-purple-200">
                     OPCIONAL
@@ -1021,8 +1203,47 @@ export const DenunciaForm: React.FC<DenunciaFormProps> = ({
                 </span>
               </div>
 
-              {/* 3 Botões de Ação */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {/* Caixas de Termos de Uso das Provas */}
+              <div className="space-y-2.5">
+                {/* Termos de Uso de Imagem */}
+                <label className="flex items-start gap-2.5 p-3 rounded-2xl bg-purple-50/80 border border-purple-200 text-xs text-[#241e33] cursor-pointer hover:bg-purple-100/50 transition-all">
+                  <input 
+                    type="checkbox" 
+                    checked={termoImagemAceito} 
+                    onChange={(e) => setTermoImagemAceito(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 rounded border-purple-300 text-purple-600 focus:ring-purple-500 cursor-pointer"
+                  />
+                  <div className="space-y-0.5">
+                    <span className="font-bold flex items-center gap-1.5 text-purple-950">
+                      <Camera className="w-3.5 h-3.5 text-purple-600" /> Caixa de Termos de Uso de Imagem / Fotos:
+                    </span>
+                    <p className="text-[11px] text-[#5c546d] leading-relaxed">
+                      Declaro que o envio de imagens, fotos de bilhetes ou prints destina-se exclusivamente à comprovação dos fatos para apuração pedagógica do Conselho Escolar, em estrita conformidade com a LGPD (Lei nº 13.709/2018 - Art. 14) e o Estatuto da Criança e do Adolescente (ECA - Lei nº 8.069/1990).
+                    </p>
+                  </div>
+                </label>
+
+                {/* Termos de Uso de Áudio */}
+                <label className="flex items-start gap-2.5 p-3 rounded-2xl bg-purple-50/80 border border-purple-200 text-xs text-[#241e33] cursor-pointer hover:bg-purple-100/50 transition-all">
+                  <input 
+                    type="checkbox" 
+                    checked={termoAudioAceito} 
+                    onChange={(e) => setTermoAudioAceito(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 rounded border-purple-300 text-purple-600 focus:ring-purple-500 cursor-pointer"
+                  />
+                  <div className="space-y-0.5">
+                    <span className="font-bold flex items-center gap-1.5 text-purple-950">
+                      <Volume2 className="w-3.5 h-3.5 text-purple-600" /> Caixa de Termos de Uso de Áudio / Gravação de Voz (Máximo 1 minuto):
+                    </span>
+                    <p className="text-[11px] text-[#5c546d] leading-relaxed">
+                      Autorizo o envio de gravação de áudio de no máximo <strong>1 minuto (60 segundos)</strong>. O depoimento vocal será manuseado sob absoluto sigilo pela comissão escolar de proteção, resguardada a identidade e privacidade do menor.
+                    </p>
+                  </div>
+                </label>
+              </div>
+
+              {/* Botões de Ação para Foto, Áudio e Arquivos */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
                 <input
                   type="file"
                   ref={fileInputRef}
@@ -1037,15 +1258,33 @@ export const DenunciaForm: React.FC<DenunciaFormProps> = ({
                   onClick={() => fileInputRef.current?.click()}
                   className="p-3 rounded-2xl bg-white hover:bg-purple-50 border border-purple-200 hover:border-purple-400 text-xs font-bold text-[#241e33] flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs"
                 >
-                  <Upload className="w-4 h-4 text-purple-600" /> Escolher Arquivo (Opcional)
+                  <Upload className="w-4 h-4 text-purple-600" /> Anexar Arquivo / Foto
                 </button>
+
+                {!isRecording ? (
+                  <button
+                    type="button"
+                    onClick={handleStartAudioRecord}
+                    className="p-3 rounded-2xl bg-white hover:bg-rose-50 border border-rose-200 hover:border-rose-400 text-xs font-bold text-rose-900 flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs"
+                  >
+                    <Mic className="w-4 h-4 text-rose-600" /> 🔴 Gravar Áudio (Máx. 1 min)
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleStopAudioRecord}
+                    className="p-3 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md animate-pulse"
+                  >
+                    <MicOff className="w-4 h-4" /> Parar Gravação (00:{recordingSeconds < 10 ? `0${recordingSeconds}` : recordingSeconds} / 01:00)
+                  </button>
+                )}
 
                 <button
                   type="button"
                   onClick={handleAddSimulatedPrint}
                   className="p-3 rounded-2xl bg-white hover:bg-cyan-50 border border-cyan-200 hover:border-cyan-400 text-xs font-bold text-cyan-900 flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs"
                 >
-                  <Smartphone className="w-4 h-4 text-cyan-600" /> + Simular Print (Opcional)
+                  <Smartphone className="w-4 h-4 text-cyan-600" /> + Simular Print
                 </button>
 
                 <button
@@ -1053,62 +1292,134 @@ export const DenunciaForm: React.FC<DenunciaFormProps> = ({
                   onClick={handleAddSimulatedFoto}
                   className="p-3 rounded-2xl bg-white hover:bg-emerald-50 border border-emerald-200 hover:border-emerald-400 text-xs font-bold text-emerald-900 flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs"
                 >
-                  <Camera className="w-4 h-4 text-emerald-600" /> + Simular Foto (Opcional)
+                  <Camera className="w-4 h-4 text-emerald-600" /> + Simular Foto
                 </button>
               </div>
 
-              {/* Lista de Anexos Adicionados */}
+              {/* Lista de Anexos Adicionados com Visualização de Foto/Thumbnail e Player de Áudio */}
               {anexos.length > 0 && (
-                <div className="space-y-2 pt-1">
-                  {anexos.map((anexo) => (
-                    <div
-                      key={anexo.id}
-                      className="p-3 rounded-xl bg-purple-50 border border-purple-200 flex items-center justify-between gap-3 text-xs"
-                    >
-                      <div className="flex items-center gap-2.5 truncate">
-                        {anexo.tipo === 'print' ? (
-                          <Smartphone className="w-4 h-4 text-cyan-600 flex-shrink-0" />
-                        ) : anexo.tipo === 'foto' ? (
-                          <Camera className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                        ) : (
-                          <Paperclip className="w-4 h-4 text-purple-600 flex-shrink-0" />
-                        )}
-                        <span className="font-mono text-[#241e33] truncate">{anexo.nome}</span>
-                        {anexo.tamanho && (
-                          <span className="text-[10px] text-[#786e8a] font-mono">({anexo.tamanho})</span>
-                        )}
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveAnexo(anexo.id)}
-                        className="p-1 rounded-md text-[#786e8a] hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                        title="Remover anexo"
+                <div className="space-y-3 pt-2">
+                  <span className="text-xs font-bold text-purple-950 uppercase tracking-wider block">
+                    Fotos e Evidências Carregadas ({anexos.length}):
+                  </span>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {anexos.map((anexo) => (
+                      <div
+                        key={anexo.id}
+                        className="p-3.5 rounded-2xl bg-white border border-purple-200 shadow-xs flex items-start gap-3 relative group hover:border-purple-400 transition-all"
                       >
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ))}
+                        {/* Imagem / Thumbnail da Foto ou Print */}
+                        {(anexo.tipo === 'foto' || anexo.tipo === 'print' || anexo.url?.startsWith('data:image')) ? (
+                          <div 
+                            className="relative flex-shrink-0 cursor-pointer group/img overflow-hidden rounded-xl border border-purple-200"
+                            onClick={() => anexo.url && setPreviewImage({ url: anexo.url, title: anexo.nome })}
+                            title="Clique para expandir a foto"
+                          >
+                            <img 
+                              src={anexo.url || sampleFotoSvg} 
+                              alt={anexo.nome} 
+                              className="w-16 h-16 sm:w-20 sm:h-20 object-cover bg-purple-100 group-hover/img:scale-110 transition-transform duration-300"
+                              referrerPolicy="no-referrer"
+                            />
+                            <div className="absolute inset-0 bg-black/30 opacity-0 group-hover/img:opacity-100 flex items-center justify-center transition-opacity text-white text-[10px] font-bold">
+                              🔍 Ampliar
+                            </div>
+                          </div>
+                        ) : anexo.tipo === 'audio' ? (
+                          <div className="w-12 h-12 rounded-xl bg-rose-100 border border-rose-200 flex items-center justify-center text-rose-600 flex-shrink-0 shadow-xs">
+                            <Volume2 className="w-6 h-6" />
+                          </div>
+                        ) : (
+                          <div className="w-12 h-12 rounded-xl bg-purple-100 border border-purple-200 flex items-center justify-center text-purple-600 flex-shrink-0 shadow-xs">
+                            <Paperclip className="w-6 h-6" />
+                          </div>
+                        )}
+
+                        {/* Detalhes do Anexo */}
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider ${
+                              anexo.tipo === 'foto' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' :
+                              anexo.tipo === 'print' ? 'bg-cyan-100 text-cyan-800 border border-cyan-200' :
+                              anexo.tipo === 'audio' ? 'bg-rose-100 text-rose-800 border border-rose-200' :
+                              'bg-purple-100 text-purple-800 border border-purple-200'
+                            }`}>
+                              {anexo.tipo === 'foto' ? '📷 Foto Anexada' :
+                               anexo.tipo === 'print' ? '📱 Print Anexado' :
+                               anexo.tipo === 'audio' ? '🎙️ Depoimento em Áudio' : '📎 Arquivo'}
+                            </span>
+                            {anexo.tamanho && (
+                              <span className="text-[10px] text-[#786e8a] font-mono">({anexo.tamanho})</span>
+                            )}
+                          </div>
+
+                          <p className="font-mono text-xs text-[#241e33] font-bold truncate" title={anexo.nome}>
+                            {anexo.nome}
+                          </p>
+
+                          {/* Player de Áudio Inline */}
+                          {anexo.tipo === 'audio' && anexo.url && (
+                            <div className="pt-1">
+                              <audio controls src={anexo.url} className="h-8 w-full max-w-[200px] rounded-lg" />
+                            </div>
+                          )}
+
+                          {/* Botão para Expandir Foto */}
+                          {(anexo.tipo === 'foto' || anexo.tipo === 'print') && anexo.url && (
+                            <button
+                              type="button"
+                              onClick={() => setPreviewImage({ url: anexo.url!, title: anexo.nome })}
+                              className="text-[11px] font-bold text-purple-700 hover:text-purple-900 underline flex items-center gap-1 pt-0.5 cursor-pointer"
+                            >
+                              🔍 Ver Foto Completa
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Botão de Remover */}
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveAnexo(anexo.id)}
+                          className="p-1.5 rounded-lg text-[#786e8a] hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                          title="Remover anexo"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
 
-            {/* Seção: Descreva o Ocorrido */}
-            <div className="space-y-2">
+            {/* Seção: Descreva o Ocorrido com a Caixa de Lei Correspondente */}
+            <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-black uppercase text-purple-900 tracking-wider">
-                  Descreva o ocorrido com suas palavras:
+                <label className="text-xs font-black uppercase text-purple-900 tracking-wider flex items-center gap-1.5">
+                  <FileText className="w-3.5 h-3.5 text-purple-600" /> Descreva o ocorrido na caixa de mensagem:
                 </label>
                 <span className="text-[10px] font-bold text-purple-800 bg-purple-100 px-2 py-0.5 rounded-full border border-purple-200">
                   OPCIONAL
                 </span>
               </div>
 
+              {/* Caixa de Fundamentação e Enquadramento Legal */}
+              <div className="p-4 rounded-2xl bg-amber-50/90 border border-amber-200/90 space-y-2 text-xs shadow-xs">
+                <div className="flex items-center gap-2 font-black text-amber-950 uppercase tracking-wider">
+                  <Scale className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                  <span>Enquadramento Legal: Lei nº 14.811/2024, Lei nº 13.185/2015 & Lei CE nº 17.252/2020</span>
+                </div>
+                <p className="text-[#59421f] leading-relaxed text-[11px]">
+                  <strong>Respaldo Jurídico do Denunciante:</strong> A <strong>Lei Federal nº 14.811/2024</strong> instituiu medidas de proteção contra a violência em estabelecimentos educacionais e criminalizou o Bullying e o Cyberbullying no Código Penal Brasileiro (Art. 146-A e Art. 146-B). O relato preenchido nesta caixa de mensagem é estritamente confidencial, salvaguardado pelo <strong>Artigo 14 da LGPD (Lei nº 13.709/2018)</strong> e pelo Estatuto da Criança e do Adolescente.
+                </p>
+              </div>
+
               <textarea
                 value={descricao}
                 onChange={(e) => setDescricao(e.target.value)}
-                placeholder="Conte como aconteceu, o que foi dito ou feito, se houve ameaças, apelidos, mensagens em redes sociais ou testemunhas presentes... Seu relato será lido exclusivamente pela equipe responsável pela apuração e mediação da escola."
-                className="w-full h-32 p-4 rounded-2xl bg-white border border-purple-200 text-xs text-[#241e33] placeholder-[#8a7f9d] focus:border-purple-500 focus:ring-2 focus:ring-purple-200 focus:outline-none transition-all resize-none leading-relaxed shadow-xs"
+                placeholder="Conte com suas palavras como aconteceu, o que foi dito ou feito, se houve ameaças, apelidos, mensagens em redes sociais ou testemunhas presentes... Seu relato nesta caixa de mensagem possui proteção legal e será lido exclusivamente pela equipe pedagógica responsável."
+                className="w-full h-36 p-4 rounded-2xl bg-white border border-purple-200 text-xs text-[#241e33] placeholder-[#8a7f9d] focus:border-purple-500 focus:ring-2 focus:ring-purple-200 focus:outline-none transition-all resize-none leading-relaxed shadow-xs"
               />
             </div>
 
@@ -1153,6 +1464,51 @@ export const DenunciaForm: React.FC<DenunciaFormProps> = ({
         )}
 
       </div>
+
+      {/* MODAL DE VISUALIZAÇÃO AMPLIADA DA FOTO / ANEXO */}
+      {previewImage && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn">
+          <div className="max-w-2xl w-full rounded-3xl bg-[#120f1d] border border-purple-500/30 p-5 space-y-4 shadow-2xl relative">
+            <div className="flex items-center justify-between border-b border-purple-500/20 pb-3">
+              <div className="flex items-center gap-2">
+                <Camera className="w-5 h-5 text-purple-400" />
+                <h3 className="font-bold text-sm text-white truncate max-w-xs sm:max-w-md">
+                  {previewImage.title}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewImage(null)}
+                className="p-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="rounded-2xl overflow-hidden bg-black/60 border border-purple-500/20 flex items-center justify-center p-2 max-h-[70vh]">
+              <img 
+                src={previewImage.url} 
+                alt={previewImage.title} 
+                className="max-h-[65vh] w-auto max-w-full object-contain rounded-lg"
+                referrerPolicy="no-referrer"
+              />
+            </div>
+
+            <div className="flex items-center justify-between pt-1 text-xs text-purple-300">
+              <span className="flex items-center gap-1.5">
+                <ShieldCheck className="w-4 h-4 text-emerald-400" /> Prova vinculada sigilosamente ao protocolo
+              </span>
+              <button
+                type="button"
+                onClick={() => setPreviewImage(null)}
+                className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs cursor-pointer transition-all"
+              >
+                Fechar Visualização
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

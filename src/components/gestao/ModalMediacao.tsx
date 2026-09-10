@@ -19,6 +19,8 @@ import {
   sendProtocolMessage 
 } from '../../services/storageService';
 import { playBreathTone } from '../../services/audioSynthesizer';
+import { ModalEnvioEmail } from './ModalEnvioEmail';
+import { DocumentoOficialModal } from './DocumentoOficialModal';
 import { 
   HeartHandshake, 
   X, 
@@ -50,7 +52,8 @@ import {
   Copy,
   ChevronRight,
   ShieldAlert,
-  GraduationCap
+  GraduationCap,
+  Mail
 } from 'lucide-react';
 
 interface ModalMediacaoProps {
@@ -148,6 +151,8 @@ export const ModalMediacao: React.FC<ModalMediacaoProps> = ({
 }) => {
   // Aba ativa no modal
   const [tab, setTab] = useState<'fluxo' | 'termo' | 'guia' | 'protecao' | 'chat' | 'relato'>('fluxo');
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [showDocModal, setShowDocModal] = useState(false);
 
   // Estado da etapa restaurativa
   const etapaAtual = caso.etapa_mediacao || (caso.status === 'Resolvido' ? 'pacificado' : caso.status === 'Acolhido' ? 'sessao_dialogo' : 'escuta_inicial');
@@ -373,13 +378,25 @@ export const ModalMediacao: React.FC<ModalMediacaoProps> = ({
             <button
               onClick={() => {
                 playSfx('click');
-                window.print();
+                setShowEmailModal(true);
               }}
-              className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-white/10 transition-all cursor-pointer flex items-center gap-2 text-xs font-bold shadow-sm"
-              title="Imprimir prontuário e ficha pedagógica"
+              className="px-3.5 py-2 rounded-xl bg-purple-900/60 hover:bg-purple-800 text-purple-200 hover:text-white border border-purple-500/40 transition-all cursor-pointer flex items-center gap-2 text-xs font-bold shadow-sm"
+              title="Enviar esta denúncia por e-mail para Conselho Tutelar / Escola"
             >
-              <Printer className="w-4 h-4 text-indigo-400" />
-              <span className="hidden sm:inline">Imprimir Ficha</span>
+              <Mail className="w-4 h-4 text-purple-300" />
+              <span className="hidden sm:inline">Enviar p/ E-mail</span>
+            </button>
+
+            <button
+              onClick={() => {
+                playSfx('click');
+                setShowDocModal(true);
+              }}
+              className="px-3.5 py-2 rounded-xl bg-indigo-900/60 hover:bg-indigo-800 text-indigo-200 hover:text-white border border-indigo-500/40 transition-all cursor-pointer flex items-center gap-2 text-xs font-bold shadow-sm"
+              title="Imprimir Ofício para Conselho Tutelar ou Conselho Escolar"
+            >
+              <Printer className="w-4 h-4 text-indigo-300" />
+              <span className="hidden sm:inline">Imprimir Ofício / Relatório</span>
             </button>
 
             <button
@@ -1451,11 +1468,30 @@ export const ModalMediacao: React.FC<ModalMediacaoProps> = ({
                   <span className="text-xs font-bold text-gray-300 uppercase block">
                     Evidências e Arquivos Anexados ({caso.provas_anexas.length}):
                   </span>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {caso.provas_anexas.map((anexo, i) => (
-                      <div key={i} className="px-3 py-1.5 rounded-xl bg-black/50 border border-white/10 text-xs text-gray-300 flex items-center gap-2">
-                        <Paperclip className="w-3.5 h-3.5 text-indigo-400" />
-                        <span>{anexo.nome}</span>
+                      <div key={i} className="p-3 rounded-2xl bg-black/60 border border-white/10 text-xs text-gray-200 flex items-start gap-3">
+                        {anexo.url && (anexo.tipo === 'foto' || anexo.tipo === 'print' || anexo.url.startsWith('data:image')) ? (
+                          <img 
+                            src={anexo.url} 
+                            alt={anexo.nome} 
+                            className="w-14 h-14 rounded-xl object-cover border border-indigo-500/30 flex-shrink-0"
+                            referrerPolicy="no-referrer"
+                          />
+                        ) : (
+                          <div className="w-12 h-12 rounded-xl bg-indigo-950/60 border border-indigo-500/30 flex items-center justify-center text-indigo-400 flex-shrink-0">
+                            <Paperclip className="w-5 h-5" />
+                          </div>
+                        )}
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <p className="font-bold text-white text-xs truncate">{anexo.nome}</p>
+                          <span className="text-[10px] uppercase font-mono text-indigo-300 block">
+                            {anexo.tipo || 'Anexo'} • {anexo.tamanho || 'Carregado'}
+                          </span>
+                          {anexo.tipo === 'audio' && anexo.url && (
+                            <audio controls src={anexo.url} className="h-8 w-full max-w-[200px] mt-1" />
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -1479,6 +1515,23 @@ export const ModalMediacao: React.FC<ModalMediacaoProps> = ({
         </div>
 
       </div>
+
+      {/* Modal de Notificação por E-mail */}
+      {showEmailModal && (
+        <ModalEnvioEmail
+          denuncia={caso}
+          onClose={() => setShowEmailModal(false)}
+          onSuccess={(msg) => showToast(msg)}
+        />
+      )}
+
+      {/* Modal de Impressão Oficial de Documentos */}
+      {showDocModal && (
+        <DocumentoOficialModal
+          denuncia={caso}
+          onClose={() => setShowDocModal(false)}
+        />
+      )}
 
     </div>
   );

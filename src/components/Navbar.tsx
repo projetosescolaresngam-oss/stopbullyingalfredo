@@ -108,11 +108,11 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, onNavigate, onOpenP
   const isInternalViewActive = currentView !== 'home' && currentView !== 'denuncia' && currentView !== 'protocolo';
 
   return (
-    <header className="sticky top-0 z-50 bg-white/85 backdrop-blur-xl border-b border-purple-200/70 px-3 sm:px-6 py-2.5 transition-all shadow-[0_4px_20px_-4px_rgba(124,58,237,0.08)]">
-      <div className="max-w-7xl mx-auto flex items-center justify-between gap-3 sm:gap-4">
+    <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-xl border-b border-purple-200/70 px-2 sm:px-4 md:px-6 py-2 transition-all shadow-[0_4px_20px_-4px_rgba(124,58,237,0.08)]">
+      <div className="max-w-7xl mx-auto flex items-center justify-between gap-1.5 sm:gap-3 w-full min-w-0">
         
         {/* GRUPO PRINCIPAL: 1. PERFIL, 2. LOGO, 3. DENÚNCIA, 4. PROTOCOLO */}
-        <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+        <div className="flex items-center gap-1.5 sm:gap-2.5 md:gap-3 min-w-0 overflow-x-auto no-scrollbar py-0.5">
           
           {/* 1. PERFIL DO USUÁRIO */}
           <div className="flex-shrink-0">
@@ -122,17 +122,17 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, onNavigate, onOpenP
           {/* 2. LOGO DO STOP */}
           <button 
             onClick={() => onNavigate('home')}
-            className="flex items-center gap-2 sm:gap-3 text-left group focus:outline-none flex-shrink-0 cursor-pointer"
+            className="flex items-center gap-1.5 sm:gap-2 text-left group focus:outline-none flex-shrink-0 cursor-pointer"
             title="Voltar ao início"
           >
-            <StopHandLogo size={38} className="transition-transform group-hover:scale-105 flex-shrink-0" />
+            <StopHandLogo size={34} className="transition-transform group-hover:scale-105 flex-shrink-0" />
             <div className="flex flex-col">
-              <span className="font-display font-black text-base sm:text-xl tracking-tight text-[#241e33] flex items-center gap-0.5">
+              <span className="font-display font-black text-sm sm:text-base md:text-lg tracking-tight text-[#241e33] flex items-center leading-none">
                 Stop<span className="text-rose-600">Bullying</span>
               </span>
-              <span className="text-[9px] sm:text-[11px] text-purple-700 font-bold tracking-wide flex items-center gap-1.5">
+              <span className="text-[8.5px] sm:text-[10px] text-purple-700 font-bold tracking-wide hidden lg:flex items-center gap-1 mt-0.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                EEMTI Alfredo Machado • 2026
+                EEMTI Alfredo Machado
               </span>
             </div>
           </button>
@@ -140,41 +140,41 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, onNavigate, onOpenP
           {/* 3. DENÚNCIA */}
           <button
             onClick={() => onNavigate('denuncia')}
-            className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-full text-xs font-bold transition-all shadow-sm cursor-pointer ${
+            className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 sm:py-2 rounded-full text-[11px] sm:text-xs font-bold transition-all shadow-xs cursor-pointer flex-shrink-0 ${
               currentView === 'denuncia'
                 ? 'bg-gradient-to-r from-rose-500 via-red-500 to-rose-600 text-white shadow-rose-500/30 ring-2 ring-rose-400'
                 : 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 hover:text-rose-800 hover:border-rose-300'
             }`}
             title="Fazer denúncia sigilosa ou anônima"
           >
-            <Megaphone className={`w-3.5 h-3.5 sm:w-4 sm:h-4 text-rose-500 ${currentView === 'denuncia' ? 'animate-bounce text-white' : ''}`} />
+            <Megaphone className={`w-3.5 h-3.5 sm:w-4 sm:h-4 text-rose-500 flex-shrink-0 ${currentView === 'denuncia' ? 'animate-bounce text-white' : ''}`} />
             <span className="tracking-wide">Denúncia</span>
           </button>
 
           {/* 4. PROTOCOLO */}
           <button
             onClick={() => onNavigate('protocolo')}
-            className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-full text-xs font-bold transition-all shadow-sm cursor-pointer ${
+            className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 sm:py-2 rounded-full text-[11px] sm:text-xs font-bold transition-all shadow-xs cursor-pointer flex-shrink-0 ${
               currentView === 'protocolo'
                 ? 'bg-gradient-to-r from-purple-600 via-violet-600 to-indigo-600 text-white shadow-purple-500/30 ring-2 ring-purple-400'
                 : 'bg-purple-50 text-purple-800 border border-purple-200 hover:bg-purple-100 hover:text-purple-900 hover:border-purple-300'
             }`}
             title="Acompanhar protocolo e conversar com a equipe escolar"
           >
-            <Search className={`w-3.5 h-3.5 sm:w-4 sm:h-4 text-purple-600 ${currentView === 'protocolo' ? 'animate-pulse text-white' : ''}`} />
+            <Search className={`w-3.5 h-3.5 sm:w-4 sm:h-4 text-purple-600 flex-shrink-0 ${currentView === 'protocolo' ? 'animate-pulse text-white' : ''}`} />
             <span className="tracking-wide">Protocolo</span>
           </button>
         </div>
 
-        {/* LÁ DO OUTRO LADO: 4. OS TRÊS PONTINHOS */}
-        <div className="flex items-center flex-shrink-0">
+        {/* LÁ DO OUTRO LADO: 5. OS TRÊS PONTINHOS (SEMPRE VISÍVEIS) */}
+        <div className="flex items-center flex-shrink-0 ml-1">
           <div className="relative" ref={menuContainerRef}>
             <button
               onClick={() => setIsMenuOpen(prev => !prev)}
               aria-expanded={isMenuOpen}
               aria-label="Mais opções de navegação"
               title="Mais páginas e recursos"
-              className={`flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 rounded-full transition-all border cursor-pointer ${
+              className={`flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 md:w-10 md:h-10 rounded-full transition-all border cursor-pointer flex-shrink-0 ${
                 isMenuOpen
                   ? 'bg-purple-600 text-white border-purple-400 shadow-[0_0_14px_rgba(147,51,234,0.4)] ring-2 ring-purple-300'
                   : isInternalViewActive
@@ -183,16 +183,16 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, onNavigate, onOpenP
               }`}
             >
               {isMenuOpen ? (
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4 sm:w-5 sm:h-5" />
               ) : (
-                <MoreVertical className="w-5 h-5" />
+                <MoreVertical className="w-4 h-4 sm:w-5 sm:h-5" />
               )}
             </button>
 
             {/* Menu Suspenso (Dropdown dos Três Pontinhos) */}
             {isMenuOpen && (
               <div 
-                className="absolute right-0 top-full mt-2 w-72 sm:w-84 max-h-[82vh] overflow-y-auto bg-white/95 backdrop-blur-2xl border border-purple-200 rounded-2xl shadow-2xl p-2 z-50 animate-in fade-in zoom-in-95 duration-150 scrollbar-thin scrollbar-thumb-purple-200 text-[#241e33]"
+                className="absolute right-0 top-full mt-2 w-[calc(100vw-20px)] max-w-[320px] sm:max-w-xs md:w-84 max-h-[82vh] overflow-y-auto bg-white/95 backdrop-blur-2xl border border-purple-200 rounded-2xl shadow-2xl p-2 z-50 animate-in fade-in zoom-in-95 duration-150 scrollbar-thin scrollbar-thumb-purple-200 text-[#241e33]"
                 style={{ boxShadow: '0 20px 40px rgba(124,58,237,0.15), 0 0 20px rgba(124,58,237,0.1)' }}
               >
                 {/* Header do Menu */}

@@ -17,31 +17,21 @@ const STORAGE_KEY_LOGS = 'stopbullying_logs_v2';
 const STORAGE_KEY_PROTOCOL_CHATS = 'stopbullying_protocol_chats_v2';
 const STORAGE_KEY_LAST_PROTOCOL = 'stopbullying_last_protocol_v2';
 
-const INITIAL_SOS_ALERTS: SOSAlert[] = [
-  {
-    id: 'sos-seed-1',
-    latitude: -3.7319,
-    longitude: -38.5267,
-    precisao_metros: 12,
-    dispositivo_info: 'Mobile Chrome (Android) - Escola EEMTI Alfredo Machado',
-    data_disparo: new Date(Date.now() - 1000 * 60 * 25).toISOString(),
-    status: 'URGENTE',
-    local_aproximado: 'Corredor do Bloco B / Pátio dos 1ºs Anos'
-  },
-  {
-    id: 'sos-seed-2',
-    latitude: -3.7325,
-    longitude: -38.5270,
-    precisao_metros: 8,
-    dispositivo_info: 'Mobile Safari (iOS) - Redondezas do Portão Principal',
-    data_disparo: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
-    status: 'ATENDIDO',
-    local_aproximado: 'Portão de Saída Principal',
-    atendido_por: 'Coord. Silvana Rocha',
-    atendido_em: new Date(Date.now() - 1000 * 60 * 60 * 23).toISOString(),
-    notas_atendimento: 'Inspetor escolar compareceu imediatamente no portão e dispersou conflito.'
+const INITIAL_SOS_ALERTS: SOSAlert[] = [];
+
+// Helper para gerar UUID v4 válido compatível com PostgreSQL/Supabase
+export function generateUUID(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    try {
+      return crypto.randomUUID();
+    } catch {}
   }
-];
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
 
 // Helper para executar chamadas assíncronas do Supabase com tratamento de exceções
 async function safeSupabaseExec<T>(fn: () => PromiseLike<T>): Promise<T | null> {
@@ -50,6 +40,12 @@ async function safeSupabaseExec<T>(fn: () => PromiseLike<T>): Promise<T | null> 
   } catch (err) {
     console.warn('[Supabase Silent Error]', err);
     return null;
+  }
+}
+
+function notifyStorageUpdated(): void {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('storage_denuncias_updated'));
   }
 }
 
@@ -70,8 +66,19 @@ export async function syncFromSupabase(): Promise<void> {
       .select('*')
       .order('data_envio', { ascending: false });
 
-    if (!error && dbDenuncias && dbDenuncias.length > 0) {
+    if (!error && Array.isArray(dbDenuncias)) {
       localStorage.setItem(STORAGE_KEY_DENUNCIAS, JSON.stringify(dbDenuncias));
+      notifyStorageUpdated();
+    }
+
+    const { data: dbSOS, error: sosError } = await supabase
+      .from('sos_alertas')
+      .select('*')
+      .order('data_disparo', { ascending: false });
+
+    if (!sosError && Array.isArray(dbSOS)) {
+      localStorage.setItem(STORAGE_KEY_SOS, JSON.stringify(dbSOS));
+      notifyStorageUpdated();
     }
   } catch (err) {
     console.warn('[Supabase Sync]', err);
@@ -82,12 +89,24 @@ export const getDenuncias = (): Denuncia[] => {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_DENUNCIAS);
     if (!raw) {
-      localStorage.setItem(STORAGE_KEY_DENUNCIAS, JSON.stringify(INITIAL_DENUNCIAS));
-      return INITIAL_DENUNCIAS;
+      localStorage.setItem(STORAGE_KEY_DENUNCIAS, JSON.stringify([]));
+      return [];
     }
-    return JSON.parse(raw);
+    const parsed: Denuncia[] = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      // Filtrar dados fictícios antigos para teste real
+      const mockProtocols = ['STP-94A1F', 'STP-88C2B', 'STP-71E9D', 'STP-63F4A', 'STP-SOS991'];
+      const mockIds = ['1', '2', '3', '4', '5'];
+      const cleaned = parsed.filter(d => !mockProtocols.includes(d.protocolo) && !mockIds.includes(d.id));
+      if (cleaned.length !== parsed.length) {
+        localStorage.setItem(STORAGE_KEY_DENUNCIAS, JSON.stringify(cleaned));
+        return cleaned;
+      }
+      return parsed;
+    }
+    return [];
   } catch {
-    return INITIAL_DENUNCIAS;
+    return [];
   }
 };
 
@@ -95,13 +114,14 @@ export const saveDenuncia = (denuncia: Omit<Denuncia, 'id' | 'data_envio' | 'sta
   const list = getDenuncias();
   const nova: Denuncia = {
     ...denuncia,
-    id: denuncia.id || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 9)),
+    id: (denuncia.id && denuncia.id.length >= 20) ? denuncia.id : generateUUID(),
     data_envio: new Date().toISOString(),
     status: 'Em Análise'
   };
   list.unshift(nova);
   try {
     localStorage.setItem(STORAGE_KEY_DENUNCIAS, JSON.stringify(list));
+    notifyStorageUpdated();
   } catch {}
   addLog('DENUNCIA_CRIADA', `Protocolo ${nova.protocolo}`);
   setLastCreatedProtocol(nova.protocolo);
@@ -255,13 +275,14 @@ export const saveSOSAlert = (alertData: Omit<SOSAlert, 'id' | 'data_disparo' | '
   } catch {}
   const novo: SOSAlert = {
     ...alertData,
-    id: (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 9)),
+    id: generateUUID(),
     data_disparo: new Date().toISOString(),
     status: 'URGENTE'
   };
   list.unshift(novo);
   try {
     localStorage.setItem(STORAGE_KEY_SOS, JSON.stringify(list));
+    notifyStorageUpdated();
   } catch {}
   addLog('SOS_DISPARO', `Lat: ${alertData.latitude}, Lng: ${alertData.longitude}`);
 
@@ -532,12 +553,22 @@ export const getSOSAlerts = (): SOSAlert[] => {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_SOS);
     if (!raw) {
-      localStorage.setItem(STORAGE_KEY_SOS, JSON.stringify(INITIAL_SOS_ALERTS));
-      return INITIAL_SOS_ALERTS;
+      localStorage.setItem(STORAGE_KEY_SOS, JSON.stringify([]));
+      return [];
     }
-    return JSON.parse(raw);
+    const parsed: SOSAlert[] = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      const mockSOS = ['sos-seed-1', 'sos-seed-2'];
+      const cleaned = parsed.filter(s => !mockSOS.includes(s.id));
+      if (cleaned.length !== parsed.length) {
+        localStorage.setItem(STORAGE_KEY_SOS, JSON.stringify(cleaned));
+        return cleaned;
+      }
+      return parsed;
+    }
+    return [];
   } catch {
-    return INITIAL_SOS_ALERTS;
+    return [];
   }
 };
 
@@ -721,11 +752,29 @@ export const runDatabaseDiagnosis = (): DatabaseDiagnosticResult => {
 };
 
 export const resetDatabaseToDefaults = (): void => {
-  localStorage.setItem(STORAGE_KEY_DENUNCIAS, JSON.stringify(INITIAL_DENUNCIAS));
-  localStorage.setItem(STORAGE_KEY_SOS, JSON.stringify(INITIAL_SOS_ALERTS));
+  localStorage.setItem(STORAGE_KEY_DENUNCIAS, JSON.stringify([]));
+  localStorage.setItem(STORAGE_KEY_SOS, JSON.stringify([]));
   localStorage.setItem(STORAGE_KEY_LOGS, JSON.stringify([
-    { type: 'BANCO_RESET', detail: 'Restauração para sementes padrão da EEMTI Alfredo Machado', timestamp: new Date().toISOString() }
+    { type: 'BANCO_RESET', detail: 'Limpeza da base de dados local para início de testes reais', timestamp: new Date().toISOString() }
   ]));
+  notifyStorageUpdated();
+};
+
+export const clearAllFictitiousData = async (): Promise<void> => {
+  localStorage.setItem(STORAGE_KEY_DENUNCIAS, JSON.stringify([]));
+  localStorage.setItem(STORAGE_KEY_SOS, JSON.stringify([]));
+  localStorage.removeItem(STORAGE_KEY_PROTOCOL_CHATS);
+  localStorage.removeItem(STORAGE_KEY_LAST_PROTOCOL);
+  addLog('DADOS_FICTICIOS_EXCLUIDOS', 'Remoção de todos os dados de simulação e inicialização limpa.');
+  notifyStorageUpdated();
+
+  const supabase = getSupabase();
+  if (supabase) {
+    const mockProtocols = ['STP-94A1F', 'STP-88C2B', 'STP-71E9D', 'STP-63F4A', 'STP-SOS991'];
+    for (const proto of mockProtocols) {
+      await safeSupabaseExec(() => supabase.from('denuncias').delete().eq('protocolo', proto));
+    }
+  }
 };
 
 export const exportFullDatabaseJSON = (): string => {
@@ -761,4 +810,69 @@ export const exportDenunciasCSV = (denuncias: Denuncia[]): string => {
     csv += `${d.protocolo};${d.tipo_violencia};${d.local_escola};${turno};${freq};${papel};${turma};"${relatoClean}";"${linkClean}";${mTipo};${mDur};${dataFmt};${d.status};${etapa}\n`;
   });
   return csv;
+};
+
+const STORAGE_KEY_EMAILS_CONFIG = 'stopbullying_emails_config_v1';
+
+export const getInstitutionalEmails = (): {
+  emailConselhoTutelar: string;
+  emailEscola: string;
+  telefoneConselhoTutelar: string;
+  responsavelEnvio: string;
+  ultimoRelatorioMensalEnviado?: string;
+  agendamentoAtivo: boolean;
+} => {
+  const defaultConfig = {
+    emailConselhoTutelar: 'conselhotutelar.madalena@ceara.gov.br',
+    emailEscola: 'eemti.alfredomachado@escola.ce.gov.br',
+    telefoneConselhoTutelar: '(88) 3442-1200 / (88) 98800-0000',
+    responsavelEnvio: 'Comissão de Mediação Escolar - EEMTI Alfredo Machado',
+    agendamentoAtivo: true
+  };
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_EMAILS_CONFIG);
+    if (!raw) {
+      localStorage.setItem(STORAGE_KEY_EMAILS_CONFIG, JSON.stringify(defaultConfig));
+      return defaultConfig;
+    }
+    return { ...defaultConfig, ...JSON.parse(raw) };
+  } catch {
+    return defaultConfig;
+  }
+};
+
+export const saveInstitutionalEmails = (config: Partial<ReturnType<typeof getInstitutionalEmails>>): void => {
+  try {
+    const current = getInstitutionalEmails();
+    const updated = { ...current, ...config };
+    localStorage.setItem(STORAGE_KEY_EMAILS_CONFIG, JSON.stringify(updated));
+    addLog('EMAILS_INSTITUCIONAIS_ATUALIZADOS', `Conselho: ${updated.emailConselhoTutelar} | Escola: ${updated.emailEscola}`);
+  } catch (e) {
+    console.error('Erro ao salvar e-mails institucionais:', e);
+  }
+};
+
+export const recordEmailDispatch = (
+  denunciaId: string,
+  destinatarios: string[],
+  tipoEnvio: 'individual' | 'relatorio_mensal' = 'individual',
+  observacao?: string
+): void => {
+  if (tipoEnvio === 'individual' && denunciaId) {
+    const acaoTexto = `📧 Encaminhado relatório oficial por e-mail para: ${destinatarios.join(', ')}${observacao ? ` (${observacao})` : ''}`;
+    addMediacaoAction(
+      denunciaId,
+      acaoTexto,
+      'Sistema de Notificação por E-mail (EEMTI Alfredo Machado)',
+      'Encaminhamento Externo'
+    );
+  }
+
+  if (tipoEnvio === 'relatorio_mensal') {
+    saveInstitutionalEmails({
+      ultimoRelatorioMensalEnviado: new Date().toISOString()
+    });
+  }
+
+  addLog('EMAIL_DISPATCHED', `Tipo: ${tipoEnvio} | Enviado para: ${destinatarios.join(', ')}`);
 };

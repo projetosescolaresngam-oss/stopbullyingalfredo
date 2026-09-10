@@ -19,12 +19,12 @@ export const UserProfileHeader: React.FC<UserProfileHeaderProps> = ({ onOpenProf
   return (
     <button
       onClick={onOpenProfile}
-      className="group relative flex items-center gap-2 px-2.5 py-1 rounded-full bg-gradient-to-r from-purple-100 via-indigo-50 to-pink-100 hover:from-purple-200 hover:to-pink-200 border border-purple-300 hover:border-purple-400 shadow-sm transition-all text-left cursor-pointer focus:outline-none"
+      className="group relative flex items-center gap-1.5 sm:gap-2 px-1.5 sm:px-2.5 py-1 rounded-full bg-gradient-to-r from-purple-100 via-indigo-50 to-pink-100 hover:from-purple-200 hover:to-pink-200 border border-purple-300 hover:border-purple-400 shadow-sm transition-all text-left cursor-pointer focus:outline-none flex-shrink-0"
       title={`Perfil: ${titleName} (Nível ${userProfile.currentLevel}) - Clique para ver coleções e conquistas`}
     >
       {/* Avatar Container with Level Badge */}
       <div className="relative flex-shrink-0">
-        <div className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center relative">
+        <div className="w-7 h-7 sm:w-8 sm:h-8 md:w-9 md:h-9 flex items-center justify-center relative">
           <AvatarRenderer
             iconId={userProfile.equippedIconId}
             frameId={userProfile.equippedFrameId}
@@ -34,42 +34,42 @@ export const UserProfileHeader: React.FC<UserProfileHeaderProps> = ({ onOpenProf
             showBadge={false}
           />
         </div>
-        <div className="absolute -bottom-1 -right-1 px-1.5 py-0.2 rounded-full bg-gradient-to-r from-amber-400 to-amber-500 text-[#1a0800] text-[8px] font-black border border-amber-200 shadow-sm flex items-center justify-center leading-none">
+        <div className="absolute -bottom-1 -right-1 px-1 sm:px-1.5 py-0.2 rounded-full bg-gradient-to-r from-amber-400 to-amber-500 text-[#1a0800] text-[7.5px] sm:text-[8px] font-black border border-amber-200 shadow-sm flex items-center justify-center leading-none">
           {userProfile.currentLevel}
         </div>
       </div>
 
-      {/* Info Column - Only Highlighted Title & XP Progress */}
-      <div className="flex flex-col pr-1 min-w-0">
+      {/* Info Column - Highlighted Title & XP Progress */}
+      <div className="hidden min-[480px]:flex flex-col pr-1 min-w-0">
         {/* Highlighted Title Row (No username) */}
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs sm:text-[13px] font-black tracking-wide text-purple-950 group-hover:text-purple-900 transition-colors flex items-center gap-1 truncate max-w-[120px] sm:max-w-[170px]">
-            <Sparkles className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-amber-600 flex-shrink-0 animate-pulse" />
+        <div className="flex items-center gap-1">
+          <span className="text-[11px] sm:text-xs md:text-[13px] font-black tracking-wide text-purple-950 group-hover:text-purple-900 transition-colors flex items-center gap-1 truncate max-w-[85px] sm:max-w-[130px] md:max-w-[170px]">
+            <Sparkles className="w-2.5 h-2.5 text-amber-600 flex-shrink-0 animate-pulse" />
             <span className="truncate">{titleName}</span>
           </span>
 
           {equippedBadgeObj && (
-            <span className="hidden xs:inline-flex items-center justify-center text-[10px]" title={equippedBadgeObj.name}>
+            <span className="hidden sm:inline-flex items-center justify-center text-[10px]" title={equippedBadgeObj.name}>
               🛡️
             </span>
           )}
         </div>
 
         {/* Level & XP Progress Row */}
-        <div className="flex items-center gap-1.5 mt-0.5">
-          <span className="text-[9px] font-black text-purple-700 flex items-center gap-0.5 flex-shrink-0">
-            <Zap className="w-2.5 h-2.5 text-amber-500 fill-amber-500" />
+        <div className="flex items-center gap-1 sm:gap-1.5 mt-0.5">
+          <span className="text-[8.5px] sm:text-[9px] font-black text-purple-700 flex items-center gap-0.5 flex-shrink-0">
+            <Zap className="w-2 h-2 sm:w-2.5 sm:h-2.5 text-amber-500 fill-amber-500" />
             Nv. {userProfile.currentLevel}
           </span>
 
-          <div className="w-12 sm:w-20 bg-purple-200/70 h-1.5 rounded-full overflow-hidden border border-purple-300 p-[0.5px] flex-shrink-0">
+          <div className="w-8 sm:w-14 md:w-20 bg-purple-200/70 h-1.5 rounded-full overflow-hidden border border-purple-300 p-[0.5px] flex-shrink-0">
             <div 
               className="h-full bg-gradient-to-r from-purple-500 via-violet-500 to-indigo-500 rounded-full transition-all duration-500 shadow-sm"
               style={{ width: `${xpPercent}%` }}
             />
           </div>
 
-          <span className="text-[8.5px] font-mono text-purple-700 font-bold hidden sm:inline-block">
+          <span className="text-[8.5px] font-mono text-purple-700 font-bold hidden md:inline-block">
             {userProfile.currentXp}/{userProfile.nextLevelXp} XP
           </span>
         </div>

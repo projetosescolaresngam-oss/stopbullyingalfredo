@@ -8,13 +8,19 @@ import {
   getDenuncias, 
   getSOSAlerts, 
   updateSOSAlertStatus, 
-  exportDenunciasCSV
+  exportDenunciasCSV,
+  syncFromSupabase,
+  clearAllFictitiousData
 } from '../services/storageService';
 import { playBreathTone } from '../services/audioSynthesizer';
 import { ModalMediacao } from './gestao/ModalMediacao';
+import { ModalEnvioEmail } from './gestao/ModalEnvioEmail';
+import { ModalRelatorioMensal } from './gestao/ModalRelatorioMensal';
+import { DocumentoOficialModal } from './gestao/DocumentoOficialModal';
 import { EstatisticasGestao } from './gestao/EstatisticasGestao';
 import { 
   ShieldCheck, 
+  Printer, 
   Lock, 
   Unlock, 
   Eye, 
@@ -51,7 +57,8 @@ import {
   Calendar,
   ExternalLink,
   TrafficCone,
-  ArrowUpDown
+  ArrowUpDown,
+  Mail
 } from 'lucide-react';
 import { getSemaforoInfo } from '../utils/semaforoUtils';
 
@@ -89,8 +96,11 @@ export const PainelGestao: React.FC<PainelGestaoProps> = ({ onBack }) => {
   const [dataSortOrder, setDataSortOrder] = useState<'recentes' | 'antigas'>('recentes');
   const [onlySOSFilter, setOnlySOSFilter] = useState(false);
 
-  // 4. Modal de Mediação Aprofundada
+  // 4. Modal de Mediação Aprofundada, Impressão & E-mails
   const [selectedCase, setSelectedCase] = useState<Denuncia | null>(null);
+  const [caseForEmail, setCaseForEmail] = useState<Denuncia | null>(null);
+  const [docForPrint, setDocForPrint] = useState<Denuncia | null>(null);
+  const [showMonthlyReportModal, setShowMonthlyReportModal] = useState(false);
 
   // 5. Central de Notificações
   const [showNotificationDrawer, setShowNotificationDrawer] = useState(false);
@@ -153,7 +163,14 @@ export const PainelGestao: React.FC<PainelGestaoProps> = ({ onBack }) => {
 
   useEffect(() => {
     if (isAuthenticated) {
-      loadDashboardData();
+      syncFromSupabase().then(() => loadDashboardData()).catch(() => loadDashboardData());
+      const handleStorageUpdate = () => {
+        loadDashboardData();
+      };
+      window.addEventListener('storage_denuncias_updated', handleStorageUpdate);
+      return () => {
+        window.removeEventListener('storage_denuncias_updated', handleStorageUpdate);
+      };
     }
   }, [isAuthenticated]);
 
@@ -652,6 +669,19 @@ export const PainelGestao: React.FC<PainelGestaoProps> = ({ onBack }) => {
             >
               <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
               <span className="hidden sm:inline">Exportar CSV</span>
+            </button>
+
+            {/* Relatório Mensal por E-mail */}
+            <button
+              onClick={() => {
+                playSfx('click');
+                setShowMonthlyReportModal(true);
+              }}
+              className="px-3.5 py-2.5 rounded-2xl bg-indigo-900/60 hover:bg-indigo-800 text-indigo-200 hover:text-white border border-indigo-500/40 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
+              title="Gerar e enviar relatório mensal de denúncias para Conselho Tutelar e Escola"
+            >
+              <Mail className="w-4 h-4 text-indigo-300" />
+              <span className="hidden sm:inline">Relatório Mensal</span>
             </button>
 
             {/* Bloquear Painel */}
@@ -1441,22 +1471,52 @@ export const PainelGestao: React.FC<PainelGestaoProps> = ({ onBack }) => {
                         )}
                       </div>
 
-                      {/* Botão de Destaque: Mediar Caso */}
-                      <button
-                        onClick={() => {
-                          playSfx('click');
-                          setSelectedCase(caso);
-                        }}
-                        className="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-black flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/30 transition-all hover:scale-105 cursor-pointer self-start sm:self-center"
-                      >
-                        <HeartHandshake className="w-4 h-4 text-pink-300" />
-                        <span>Abrir Prontuário & Mediação</span>
-                        {acoesCount > 0 && (
-                          <span className="px-1.5 py-0.5 rounded-md bg-black/40 text-[10px] font-mono">
-                            {acoesCount}
-                          </span>
-                        )}
-                      </button>
+                      <div className="flex items-center gap-2 flex-wrap self-start sm:self-center">
+                        {/* Botão de Imprimir Denúncia (Ofício CT / SEDUC) */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            playSfx('click');
+                            setDocForPrint(caso);
+                          }}
+                          className="px-3 py-2.5 rounded-2xl bg-indigo-900/60 hover:bg-indigo-800 text-indigo-200 hover:text-white text-xs font-bold flex items-center justify-center gap-1.5 border border-indigo-500/40 shadow-sm transition-all cursor-pointer"
+                          title="Imprimir Ofício para Conselho Tutelar ou Conselho Escolar / SEDUC"
+                        >
+                          <Printer className="w-4 h-4 text-indigo-300" />
+                          <span className="hidden md:inline">Imprimir Denúncia</span>
+                        </button>
+
+                        {/* Botão de Envio por E-mail */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            playSfx('click');
+                            setCaseForEmail(caso);
+                          }}
+                          className="px-3 py-2.5 rounded-2xl bg-purple-900/60 hover:bg-purple-800 text-purple-200 hover:text-white text-xs font-bold flex items-center justify-center gap-1.5 border border-purple-500/40 shadow-sm transition-all cursor-pointer"
+                          title="Enviar denúncia por e-mail para Conselho Tutelar / Escola"
+                        >
+                          <Mail className="w-4 h-4 text-purple-300" />
+                          <span className="hidden md:inline">Enviar p/ E-mail</span>
+                        </button>
+
+                        {/* Botão de Destaque: Mediar Caso */}
+                        <button
+                          onClick={() => {
+                            playSfx('click');
+                            setSelectedCase(caso);
+                          }}
+                          className="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-black flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/30 transition-all hover:scale-105 cursor-pointer"
+                        >
+                          <HeartHandshake className="w-4 h-4 text-pink-300" />
+                          <span>Abrir Prontuário & Mediação</span>
+                          {acoesCount > 0 && (
+                            <span className="px-1.5 py-0.5 rounded-md bg-black/40 text-[10px] font-mono">
+                              {acoesCount}
+                            </span>
+                          )}
+                        </button>
+                      </div>
 
                     </div>
 
@@ -1711,6 +1771,37 @@ export const PainelGestao: React.FC<PainelGestaoProps> = ({ onBack }) => {
             </form>
           </div>
         </div>
+      )}
+
+      {/* MODAL 1: ENVIAR DENÚNCIA INDIVIDUAL POR E-MAIL */}
+      {caseForEmail && (
+        <ModalEnvioEmail
+          denuncia={caseForEmail}
+          onClose={() => setCaseForEmail(null)}
+          onSuccess={(msg) => {
+            showToast(msg);
+            loadDashboardData();
+          }}
+        />
+      )}
+
+      {/* MODAL 2: IMPRIMIR DENÚNCIA (OFÍCIO CT / CONSELHO ESCOLAR) */}
+      {docForPrint && (
+        <DocumentoOficialModal
+          denuncia={docForPrint}
+          onClose={() => setDocForPrint(null)}
+        />
+      )}
+
+      {/* MODAL 3: ENVIAR RELATÓRIO MENSAL CONSOLIDADO POR E-MAIL */}
+      {showMonthlyReportModal && (
+        <ModalRelatorioMensal
+          onClose={() => setShowMonthlyReportModal(false)}
+          onSuccess={(msg) => {
+            showToast(msg);
+            loadDashboardData();
+          }}
+        />
       )}
 
     </div>
