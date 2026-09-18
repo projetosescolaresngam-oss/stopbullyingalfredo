@@ -5,9 +5,11 @@ import {
   getDenunciaByProtocolo, 
   getLastCreatedProtocol, 
   getProtocolMessages, 
-  sendProtocolMessage 
+  sendProtocolMessage,
+  deleteDenuncia 
 } from '../services/storageService';
 import { playBreathTone } from '../services/audioSynthesizer';
+import { ModalFotoCompleta } from './gestao/ModalFotoCompleta';
 import { 
   ShieldCheck, 
   Search, 
@@ -30,7 +32,9 @@ import {
   GraduationCap, 
   Info,
   ExternalLink,
-  Bot
+  Bot,
+  ZoomIn,
+  Trash2
 } from 'lucide-react';
 
 interface ProtocoloViewProps {
@@ -49,12 +53,18 @@ export const ProtocoloView: React.FC<ProtocoloViewProps> = ({
   const [denuncia, setDenuncia] = useState<Denuncia | null>(null);
   const [errorMsg, setErrorMsg] = useState<string>('');
   const [copied, setCopied] = useState(false);
+  const [selectedFotoModal, setSelectedFotoModal] = useState<{ url: string; nome?: string; tipo?: string; tamanho?: string } | null>(null);
 
   // Chat State
   const [messages, setMessages] = useState<ProtocolChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [isSending, setIsSending] = useState(false);
-  const chatBottomRef = useRef<HTMLDivElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+
+  // Exclusão / Cancelamento pelo próprio denunciante
+  const [showConfirmDelete, setShowConfirmDelete] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deletedSuccess, setDeletedSuccess] = useState(false);
 
   // Efeitos sonoros
   const playSfx = (type: 'click' | 'send' | 'receive') => {
@@ -69,7 +79,7 @@ export const ProtocoloView: React.FC<ProtocoloViewProps> = ({
     }
   };
 
-  // Carregar denúncia e mensagens quando activeProtocol mudar
+  // Carregar denúncia e mensagens quando activeProtocol mudar + atualizar em tempo real
   useEffect(() => {
     if (!activeProtocol) {
       // Tenta buscar o último protocolo salvo neste dispositivo se não houver inicial
@@ -81,6 +91,29 @@ export const ProtocoloView: React.FC<ProtocoloViewProps> = ({
       return;
     }
     consultarProtocolo(activeProtocol);
+
+    // Atualiza mensagens em tempo real para receber respostas humanas da gestão
+    const updateMsgs = () => {
+      if (activeProtocol) {
+        const msgs = getProtocolMessages(activeProtocol);
+        setMessages(msgs);
+      }
+    };
+
+    const intervalId = setInterval(updateMsgs, 1500);
+
+    const handleChatUpdate = () => {
+      updateMsgs();
+    };
+
+    window.addEventListener('protocol_chat_updated', handleChatUpdate);
+    window.addEventListener('storage', handleChatUpdate);
+
+    return () => {
+      clearInterval(intervalId);
+      window.removeEventListener('protocol_chat_updated', handleChatUpdate);
+      window.removeEventListener('storage', handleChatUpdate);
+    };
   }, [activeProtocol]);
 
   const consultarProtocolo = (proto: string) => {
@@ -106,12 +139,25 @@ export const ProtocoloView: React.FC<ProtocoloViewProps> = ({
     consultarProtocolo(searchInput.trim());
   };
 
-  // Rolar chat para o final
-  useEffect(() => {
-    chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  // Excluir / Cancelar o próprio relato
+  const handleDeleteProtocolo = () => {
+    if (!denuncia) return;
+    setIsDeleting(true);
+    try {
+      deleteDenuncia(denuncia.id);
+      playSfx('click');
+      setDenuncia(null);
+      setMessages([]);
+      setShowConfirmDelete(false);
+      setDeletedSuccess(true);
+    } catch {
+      setErrorMsg('Não foi possível cancelar a denúncia no momento.');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
-  // Enviar mensagem no chat
+  // Enviar mensagem no chat (canal direto e humano)
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputText.trim() || !denuncia) return;
@@ -123,35 +169,25 @@ export const ProtocoloView: React.FC<ProtocoloViewProps> = ({
     setInputText('');
 
     // Salva mensagem do denunciante
-    const userMsg = sendProtocolMessage(
+    sendProtocolMessage(
       denuncia.protocolo,
       'denunciante',
       texto,
       'Denunciante (Você - Anônimo)'
     );
 
-    setMessages(prev => [...prev, userMsg]);
+    setMessages(getProtocolMessages(denuncia.protocolo));
     setIsSending(false);
 
-    // Resposta automática da equipe escolar simulando atendimento rápido
+    // Rolar apenas o container interno do chat sem puxar a página
     setTimeout(() => {
-      const respostasComissao = [
-        'Mensagem recebida e registrada no histórico confidencial deste protocolo. A coordenação da EEMTI Alfredo Machado está acompanhando este chamado com máxima prioridade.',
-        'Agradecemos pelo relato adicional. Esta informação já foi anexada ao processo de mediação escolar. Permanecemos à disposição caso precise de mais acolhimento.',
-        'Sua mensagem foi entregue à comissão de acolhimento. Medidas protetivas e de observação ativa estão sendo reforçadas na escola.',
-        'Entendido. Continuamos monitorando a situação com total sigilo. Se houver qualquer emergência ou novo fato, nos avise imediatamente por aqui.'
-      ];
-      const randomResp = respostasComissao[Math.floor(Math.random() * respostasComissao.length)];
-
-      const respMsg = sendProtocolMessage(
-        denuncia.protocolo,
-        'coordenacao',
-        randomResp,
-        'Comissão de Mediação & Acolhimento (EEMTI Alfredo Machado)'
-      );
-      playSfx('receive');
-      setMessages(prev => [...prev, respMsg]);
-    }, 1200);
+      if (chatContainerRef.current) {
+        chatContainerRef.current.scrollTo({
+          top: chatContainerRef.current.scrollHeight,
+          behavior: 'smooth'
+        });
+      }
+    }, 50);
   };
 
   // Copiar código do protocolo
@@ -259,6 +295,25 @@ export const ProtocoloView: React.FC<ProtocoloViewProps> = ({
           <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2 animate-shake">
             <AlertTriangle className="w-4 h-4 text-rose-600 flex-shrink-0" />
             <span>{errorMsg}</span>
+          </div>
+        )}
+
+        {deletedSuccess && (
+          <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-300 text-emerald-900 text-xs flex items-center justify-between gap-3 animate-fadeIn">
+            <div className="flex items-center gap-2.5">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+              <div>
+                <p className="font-bold text-emerald-950">Denúncia cancelada e excluída com sucesso!</p>
+                <p className="text-[11px] text-emerald-800">O protocolo foi removido permanentemente e todas as mensagens e evidências associadas foram apagadas com segurança.</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setDeletedSuccess(false)}
+              className="text-emerald-700 hover:text-emerald-950 p-1 text-sm font-bold cursor-pointer"
+            >
+              ✕
+            </button>
           </div>
         )}
       </div>
@@ -488,6 +543,17 @@ export const ProtocoloView: React.FC<ProtocoloViewProps> = ({
                 </p>
               </div>
 
+              {/* Agressor ou Grupo Envolvido */}
+              <div className="p-4 rounded-2xl bg-purple-50/40 border border-purple-200/70 space-y-1.5">
+                <div className="flex items-center gap-1.5 text-purple-700 text-xs font-bold uppercase tracking-wide">
+                  <Users className="w-3.5 h-3.5" />
+                  <span>Agressor / Grupo Envolvido:</span>
+                </div>
+                <p className="text-xs font-semibold text-[#241e33]">
+                  {denuncia.agressor_grupo || 'Informado no relato'}
+                </p>
+              </div>
+
             </div>
 
             {/* Data e Hora de Envio */}
@@ -521,39 +587,81 @@ export const ProtocoloView: React.FC<ProtocoloViewProps> = ({
                 </h4>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {denuncia.provas_anexas.map((anexo, idx) => (
-                    <div key={idx} className="p-3 rounded-xl bg-white border border-purple-200/80 flex items-center gap-3 shadow-sm">
-                      {anexo.url ? (
-                        <img 
-                          src={anexo.url} 
-                          alt={anexo.nome} 
-                          className="w-12 h-12 rounded-lg object-cover border border-purple-200 flex-shrink-0"
-                          referrerPolicy="no-referrer"
-                        />
-                      ) : (
-                        <div className="w-12 h-12 rounded-lg bg-purple-100 border border-purple-200 flex items-center justify-center text-purple-600 flex-shrink-0">
-                          <FileText className="w-5 h-5" />
+                  {denuncia.provas_anexas.map((anexo, idx) => {
+                    const isImage = anexo.url && (anexo.tipo === 'foto' || anexo.tipo === 'print' || anexo.tipo === 'imagem' || anexo.url.startsWith('data:image'));
+                    return (
+                      <div key={idx} className="p-3 rounded-xl bg-white border border-purple-200/80 flex items-center gap-3 shadow-sm relative group">
+                        {isImage ? (
+                          <div 
+                            className="relative w-14 h-14 rounded-lg overflow-hidden border border-purple-200 cursor-pointer group/img flex-shrink-0"
+                            onClick={() => setSelectedFotoModal({
+                              url: anexo.url!,
+                              nome: anexo.nome,
+                              tipo: anexo.tipo,
+                              tamanho: anexo.tamanho
+                            })}
+                            title="Clique para ver em tamanho completo"
+                          >
+                            <img 
+                              src={anexo.url} 
+                              alt={anexo.nome} 
+                              className="w-full h-full object-cover transition-transform duration-300 group-hover/img:scale-110"
+                              referrerPolicy="no-referrer"
+                            />
+                            <div className="absolute inset-0 bg-purple-900/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center text-white">
+                              <ZoomIn className="w-4 h-4" />
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="w-12 h-12 rounded-lg bg-purple-100 border border-purple-200 flex items-center justify-center text-purple-600 flex-shrink-0">
+                            <FileText className="w-5 h-5" />
+                          </div>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-bold text-[#241e33] truncate">{anexo.nome}</p>
+                          <p className="text-[10px] text-[#5c546d] uppercase">
+                            {anexo.tipo || 'Evidência'} • {anexo.tamanho || 'Anexado'}
+                          </p>
+                          {isImage && (
+                            <button
+                              type="button"
+                              onClick={() => setSelectedFotoModal({
+                                url: anexo.url!,
+                                nome: anexo.nome,
+                                tipo: anexo.tipo,
+                                tamanho: anexo.tamanho
+                              })}
+                              className="text-[10px] text-purple-700 hover:text-purple-900 underline font-bold flex items-center gap-1 mt-0.5 cursor-pointer"
+                            >
+                              <ZoomIn className="w-3 h-3" /> Ver Foto Completa
+                            </button>
+                          )}
                         </div>
-                      )}
-                      <div className="min-w-0 flex-1">
-                        <p className="text-xs font-bold text-[#241e33] truncate">{anexo.nome}</p>
-                        <p className="text-[10px] text-[#5c546d] uppercase">
-                          {anexo.tipo || 'Evidência'} • {anexo.tamanho || 'Anexado'}
-                        </p>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
 
-            {/* Botão de Impressão do Comprovante */}
-            <div className="flex justify-end pt-2">
+            {/* Botão de Impressão do Comprovante e Cancelamento */}
+            <div className="flex flex-wrap items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  playSfx('click');
+                  setShowConfirmDelete(true);
+                }}
+                className="px-4 py-2.5 rounded-xl bg-white hover:bg-rose-50 text-rose-700 border border-rose-200/90 shadow-sm text-xs font-bold flex items-center gap-2 transition-all cursor-pointer"
+                title="Cancelar e excluir esta denúncia permanentemente"
+              >
+                <Trash2 className="w-4 h-4 text-rose-500" /> Cancelar / Excluir Este Relato
+              </button>
               <button
                 onClick={() => window.print()}
                 className="px-4 py-2.5 rounded-xl bg-white hover:bg-purple-50 text-[#241e33] border border-purple-200/80 shadow-sm text-xs font-bold flex items-center gap-2 transition-all cursor-pointer"
               >
-                <Printer className="w-4 h-4 text-purple-600" /> Imprimir Comprovante Desta Denúncia
+                <Printer className="w-4 h-4 text-purple-600" /> Imprimir Comprovante
               </button>
             </div>
 
@@ -595,12 +703,12 @@ export const ProtocoloView: React.FC<ProtocoloViewProps> = ({
             </div>
 
             {/* Caixa de Mensagens do Chat */}
-            <div className="h-80 sm:h-96 overflow-y-auto p-4 rounded-2xl bg-purple-50/40 border border-purple-200/80 space-y-3 scrollbar-thin scrollbar-thumb-purple-300">
-              {messages.map((msg) => {
+            <div ref={chatContainerRef} className="h-80 sm:h-96 overflow-y-auto p-4 rounded-2xl bg-purple-50/40 border border-purple-200/80 space-y-3 scrollbar-thin scrollbar-thumb-purple-300">
+              {messages.map((msg, idx) => {
                 const isUser = msg.remetente === 'denunciante';
                 return (
                   <div
-                    key={msg.id}
+                    key={`${msg.id || 'msg'}-${idx}`}
                     className={`flex flex-col ${isUser ? 'items-end' : 'items-start'}`}
                   >
                     <div className="flex items-center gap-1.5 text-[10px] text-[#5c546d] mb-1 px-1 font-semibold">
@@ -622,7 +730,6 @@ export const ProtocoloView: React.FC<ProtocoloViewProps> = ({
                   </div>
                 );
               })}
-              <div ref={chatBottomRef} />
             </div>
 
             {/* Formulário de Envio de Mensagem */}
@@ -649,13 +756,78 @@ export const ProtocoloView: React.FC<ProtocoloViewProps> = ({
               <div className="flex items-center justify-between text-[11px] text-[#5c546d] px-1 font-medium">
                 <span>Pressione Enter para enviar</span>
                 <span className="flex items-center gap-1 text-purple-700 font-bold">
-                  <Sparkles className="w-3 h-3 text-purple-600" /> Resposta pedagógica em tempo real
+                  <ShieldCheck className="w-3.5 h-3.5 text-purple-600" /> Canal de atendimento humano e pedagógico
                 </span>
               </div>
             </form>
 
           </div>
 
+        </div>
+      )}
+
+      {/* Modal de Foto Completa Ampliada */}
+      {selectedFotoModal && (
+        <ModalFotoCompleta 
+          fotoUrl={selectedFotoModal.url}
+          nomeArquivo={selectedFotoModal.nome}
+          protocolo={denuncia?.protocolo}
+          tipoArquivo={selectedFotoModal.tipo}
+          tamanhoArquivo={selectedFotoModal.tamanho}
+          onClose={() => setSelectedFotoModal(null)}
+        />
+      )}
+
+      {/* Modal de Confirmação de Cancelamento/Exclusão */}
+      {showConfirmDelete && denuncia && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
+          <div className="w-full max-w-md rounded-3xl bg-white border border-rose-200 p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center gap-3 border-b border-rose-100 pb-3">
+              <div className="w-10 h-10 rounded-2xl bg-rose-100 border border-rose-200 flex items-center justify-center text-rose-600 flex-shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-[#241e33] text-base">Cancelar e Excluir Relato?</h3>
+                <span className="text-xs text-rose-600 font-mono font-bold">Protocolo: {denuncia.protocolo}</span>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 space-y-1.5 text-xs text-rose-900">
+              <p className="font-bold text-rose-950 flex items-center gap-1.5">
+                <AlertTriangle className="w-4 h-4 text-rose-600 flex-shrink-0" />
+                Atenção: Os dados serão apagados permanentemente
+              </p>
+              <p className="text-[11px] leading-relaxed text-rose-800">
+                Ao confirmar, este relato será cancelado e excluído do sistema. Ninguém mais terá acesso a este protocolo ou ao histórico de mensagens do chat seguro.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setShowConfirmDelete(false)}
+                className="px-4 py-2.5 rounded-xl bg-gray-100 hover:bg-gray-200 text-[#241e33] font-bold text-xs transition-all cursor-pointer"
+              >
+                Manter Relato
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={handleDeleteProtocolo}
+                className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-xs flex items-center gap-2 shadow-md shadow-rose-600/20 transition-all cursor-pointer"
+              >
+                {isDeleting ? (
+                  <span>Excluindo...</span>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    <span>Sim, Excluir Definitivamente</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

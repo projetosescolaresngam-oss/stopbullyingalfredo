@@ -10,7 +10,8 @@ import {
   updateSOSAlertStatus, 
   exportDenunciasCSV,
   syncFromSupabase,
-  clearAllFictitiousData
+  clearAllFictitiousData,
+  deleteDenuncia
 } from '../services/storageService';
 import { playBreathTone } from '../services/audioSynthesizer';
 import { ModalMediacao } from './gestao/ModalMediacao';
@@ -58,7 +59,8 @@ import {
   ExternalLink,
   TrafficCone,
   ArrowUpDown,
-  Mail
+  Mail,
+  Trash2
 } from 'lucide-react';
 import { getSemaforoInfo } from '../utils/semaforoUtils';
 
@@ -112,6 +114,10 @@ export const PainelGestao: React.FC<PainelGestaoProps> = ({ onBack }) => {
 
   // 7. Feedback de Cópia / Notificação
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // 8. Estado para Exclusão Segura de Denúncia
+  const [denunciaParaExcluir, setDenunciaParaExcluir] = useState<Denuncia | null>(null);
+  const [isDeletingDenuncia, setIsDeletingDenuncia] = useState(false);
 
   const playSfx = (type: 'success' | 'alert' | 'click' | 'lock' | 'tab') => {
     try {
@@ -230,6 +236,26 @@ export const PainelGestao: React.FC<PainelGestaoProps> = ({ onBack }) => {
     a.download = `Relatorio_Gestao_EEMTI_${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     showToast('Planilha CSV gerada e baixada com sucesso!');
+  };
+
+  const handleConfirmDeleteDenuncia = () => {
+    if (!denunciaParaExcluir) return;
+    setIsDeletingDenuncia(true);
+    try {
+      const updated = deleteDenuncia(denunciaParaExcluir.id);
+      setDenuncias(updated);
+      if (selectedCase?.id === denunciaParaExcluir.id) {
+        setSelectedCase(null);
+      }
+      const proto = denunciaParaExcluir.protocolo;
+      setDenunciaParaExcluir(null);
+      showToast(`Denúncia ${proto} excluída permanentemente.`);
+      playSfx('alert');
+    } catch {
+      showToast('Erro ao excluir denúncia.');
+    } finally {
+      setIsDeletingDenuncia(false);
+    }
   };
 
   // Cálculos operacionais
@@ -1500,6 +1526,20 @@ export const PainelGestao: React.FC<PainelGestaoProps> = ({ onBack }) => {
                           <span className="hidden md:inline">Enviar p/ E-mail</span>
                         </button>
 
+                        {/* Botão de Excluir Denúncia */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            playSfx('alert');
+                            setDenunciaParaExcluir(caso);
+                          }}
+                          className="px-3 py-2.5 rounded-2xl bg-rose-950/40 hover:bg-rose-900/70 text-rose-300 hover:text-rose-100 text-xs font-bold flex items-center justify-center gap-1.5 border border-rose-500/30 hover:border-rose-500/60 shadow-sm transition-all cursor-pointer"
+                          title="Excluir denúncia permanentemente"
+                        >
+                          <Trash2 className="w-4 h-4 text-rose-400" />
+                          <span className="hidden md:inline">Excluir</span>
+                        </button>
+
                         {/* Botão de Destaque: Mediar Caso */}
                         <button
                           onClick={() => {
@@ -1708,6 +1748,10 @@ export const PainelGestao: React.FC<PainelGestaoProps> = ({ onBack }) => {
             loadDashboardData();
           }}
           showToast={showToast}
+          onDelete={(d) => {
+            setSelectedCase(null);
+            setDenunciaParaExcluir(d);
+          }}
         />
       )}
 
@@ -1802,6 +1846,69 @@ export const PainelGestao: React.FC<PainelGestaoProps> = ({ onBack }) => {
             loadDashboardData();
           }}
         />
+      )}
+
+      {/* MODAL 4: CONFIRMAÇÃO DE EXCLUSÃO DE DENÚNCIA */}
+      {denunciaParaExcluir && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn">
+          <div className="w-full max-w-md rounded-3xl bg-[#0e1224] border-2 border-rose-500/80 p-6 space-y-5 shadow-2xl">
+            <div className="flex items-center gap-3 border-b border-white/10 pb-3.5">
+              <div className="w-10 h-10 rounded-2xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400 flex-shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-white text-base">Excluir Registro de Denúncia</h3>
+                <span className="text-xs text-rose-300 font-mono font-bold">Protocolo: {denunciaParaExcluir.protocolo}</span>
+              </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-black/50 border border-white/10 space-y-2 text-xs">
+              <div className="flex items-center justify-between text-slate-400 text-[11px]">
+                <span>Tipo: <strong className="text-white">{denunciaParaExcluir.tipo_violencia}</strong></span>
+                <span>{new Date(denunciaParaExcluir.data_envio).toLocaleDateString('pt-BR')}</span>
+              </div>
+              <p className="text-slate-300 italic line-clamp-2">
+                "{denunciaParaExcluir.descricao}"
+              </p>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-rose-950/30 border border-rose-500/30 space-y-1.5 text-xs text-rose-200">
+              <p className="font-semibold text-white flex items-center gap-1.5">
+                <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0" />
+                Atenção: Ação irreversível!
+              </p>
+              <p className="text-[11px] leading-relaxed text-slate-300">
+                Esta ocorrência será removida do banco de dados, cancelando o protocolo e apagando todas as mensagens de chat e histórico de mediação vinculados.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-1">
+              <button
+                type="button"
+                disabled={isDeletingDenuncia}
+                onClick={() => setDenunciaParaExcluir(null)}
+                className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-slate-300 hover:text-white font-bold text-xs transition-all cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={isDeletingDenuncia}
+                onClick={handleConfirmDeleteDenuncia}
+                className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs flex items-center gap-2 shadow-lg shadow-rose-600/40 transition-all cursor-pointer"
+              >
+                {isDeletingDenuncia ? (
+                  <span>Excluindo...</span>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    <span>Sim, Excluir Denúncia</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>

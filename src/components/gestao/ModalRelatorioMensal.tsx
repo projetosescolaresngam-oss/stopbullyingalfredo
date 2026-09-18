@@ -7,6 +7,7 @@ import {
   getDenuncias 
 } from '../../services/storageService';
 import { playBreathTone } from '../../services/audioSynthesizer';
+import { printHtmlContent } from '../../services/printService';
 import { 
   BarChart2, 
   Send, 
@@ -453,7 +454,32 @@ export const ModalRelatorioMensal: React.FC<ModalRelatorioMensalProps> = ({
               
               <button
                 type="button"
-                onClick={() => window.print()}
+                onClick={() => {
+                  playBreathTone(750, 25, true);
+                  const text = buildMonthlyReportText();
+                  const html = `
+                    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 20px; line-height: 1.4; color: #000;">
+                      <div style="text-align: center; border-bottom: 2px solid #000; padding-bottom: 12px; margin-bottom: 16px;">
+                        <h2 style="margin: 0; font-size: 13pt; text-transform: uppercase;">GOVERNO DO ESTADO DO CEARÁ • SEDUC</h2>
+                        <h3 style="margin: 4px 0; font-size: 11pt;">CREDE 12 • E.E.M.T.I. ALFREDO MACHADO – MADALENA / CE</h3>
+                        <p style="margin: 0; font-size: 10pt; font-weight: bold;">RELATÓRIO MENSAL CONSOLIDADO DE GESTÃO DA CONVIVÊNCIA</p>
+                        <p style="margin: 0; font-size: 8pt; color: #555;">Mês de Referência: ${monthYearFormattedLabel()}</p>
+                      </div>
+                      <pre style="white-space: pre-wrap; font-family: monospace; font-size: 8.5pt; background: #f8fafc; padding: 14px; border: 1px solid #cbd5e1; border-radius: 6px; line-height: 1.3;">${text}</pre>
+                      <div style="margin-top: 30px; display: flex; justify-content: space-between; text-align: center; font-size: 8.5pt;">
+                        <div style="width: 45%; border-top: 1px solid #000; padding-top: 5px;">
+                          <strong>Comissão de Mediação Escolar</strong><br/>
+                          EEMTI Alfredo Machado
+                        </div>
+                        <div style="width: 45%; border-top: 1px solid #000; padding-top: 5px;">
+                          <strong>Direção / Coordenação Pedagógica</strong><br/>
+                          CREDE 12 – SEDUC/CE
+                        </div>
+                      </div>
+                    </div>
+                  `;
+                  printHtmlContent(html, `Relatorio_Mensal_${selectedMonth}_EEMTI_Alfredo_Machado`);
+                }}
                 className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer border border-white/15"
               >
                 <Printer className="w-4 h-4 text-indigo-300" />

@@ -80,6 +80,36 @@ export async function syncFromSupabase(): Promise<void> {
       localStorage.setItem(STORAGE_KEY_SOS, JSON.stringify(dbSOS));
       notifyStorageUpdated();
     }
+
+    const { data: dbMsgs, error: msgsError } = await supabase
+      .from('protocolo_mensagens')
+      .select('*')
+      .order('created_at', { ascending: true });
+
+    if (!msgsError && Array.isArray(dbMsgs)) {
+      const raw = localStorage.getItem(STORAGE_KEY_PROTOCOL_CHATS);
+      const chats: Record<string, ProtocolChatMessage[]> = raw ? JSON.parse(raw) : {};
+
+      dbMsgs.forEach((m: any) => {
+        const clean = cleanProtocolKey(m.protocolo);
+        if (!chats[clean]) chats[clean] = [];
+        const exists = chats[clean].some(existing => existing.id === m.id);
+        if (!exists) {
+          chats[clean].push({
+            id: m.id,
+            protocolo: clean,
+            remetente: m.remetente,
+            autorNome: m.autor_nome || m.autorNome || (m.remetente === 'denunciante' ? 'Denunciante Anônimo(a)' : 'Comissão de Mediação & Acolhimento'),
+            texto: m.texto,
+            dataHora: m.created_at || m.dataHora || new Date().toISOString()
+          });
+        }
+      });
+      localStorage.setItem(STORAGE_KEY_PROTOCOL_CHATS, JSON.stringify(chats));
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('protocol_chat_updated'));
+      }
+    }
   } catch (err) {
     console.warn('[Supabase Sync]', err);
   }
@@ -173,28 +203,46 @@ export const getLastCreatedProtocol = (): string | null => {
   }
 };
 
+export const cleanProtocolKey = (proto: string): string => {
+  if (!proto) return '';
+  return proto.trim().toUpperCase().replace(/^#/, '');
+};
+
 export const getDenunciaByProtocolo = (protocolo: string): Denuncia | undefined => {
   if (!protocolo) return undefined;
   const list = getDenuncias();
-  const cleanInput = protocolo.trim().toLowerCase().replace(/^#/, '');
+  const cleanInput = cleanProtocolKey(protocolo);
   return list.find(d => {
-    const cleanProto = (d.protocolo || '').trim().toLowerCase().replace(/^#/, '');
+    const cleanProto = cleanProtocolKey(d.protocolo);
     return cleanProto === cleanInput;
   });
 };
 
 export const getProtocolMessages = (protocolo: string): ProtocolChatMessage[] => {
   if (!protocolo) return [];
-  const clean = protocolo.trim().toUpperCase();
+  const clean = cleanProtocolKey(protocolo);
   try {
     const raw = localStorage.getItem(STORAGE_KEY_PROTOCOL_CHATS);
     const chats: Record<string, ProtocolChatMessage[]> = raw ? JSON.parse(raw) : {};
     if (chats[clean] && chats[clean].length > 0) {
-      return chats[clean];
+      // Deduplicar mensagens por id para evitar erros de chave duplicada no React
+      const seen = new Set<string>();
+      const deduped: ProtocolChatMessage[] = [];
+      chats[clean].forEach(msg => {
+        if (msg && msg.id && !seen.has(msg.id)) {
+          seen.add(msg.id);
+          deduped.push(msg);
+        }
+      });
+      if (deduped.length !== chats[clean].length) {
+        chats[clean] = deduped;
+        localStorage.setItem(STORAGE_KEY_PROTOCOL_CHATS, JSON.stringify(chats));
+      }
+      return deduped;
     }
     // Mensagem inicial padrão de acolhimento caso ainda não haja mensagens
     const defaultWelcome: ProtocolChatMessage = {
-      id: 'msg-welcome-' + Math.random().toString(36).substring(2, 7),
+      id: 'msg-welcome-' + clean,
       protocolo: clean,
       remetente: 'coordenacao',
       autorNome: 'Comissão de Mediação & Acolhimento (EEMTI Alfredo Machado)',
@@ -215,7 +263,7 @@ export const sendProtocolMessage = (
   texto: string,
   autorNome?: string
 ): ProtocolChatMessage => {
-  const clean = protocolo.trim().toUpperCase();
+  const clean = cleanProtocolKey(protocolo);
   const novaMsg: ProtocolChatMessage = {
     id: 'msg-' + (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 9)),
     protocolo: clean,
@@ -235,6 +283,11 @@ export const sendProtocolMessage = (
   } catch {}
 
   addLog('CHAT_PROTOCOLO_MSG', `Msg no protocolo ${clean} por ${remetente}`);
+
+  // Dispara evento customizado para atualizar componentes em tempo real no mesmo navegador/janela
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('protocol_chat_updated', { detail: { protocolo: clean } }));
+  }
 
   // Sincronização com Supabase
   const supabase = getSupabase();
@@ -497,15 +550,47 @@ export const addCheckinAcompanhamento = (
 
 export const deleteDenuncia = (denunciaId: string): Denuncia[] => {
   const list = getDenuncias();
-  const updated = list.filter(d => d.id !== denunciaId);
+  const denunciaToDelete = list.find(d => d.id === denunciaId || d.protocolo === denunciaId);
+  const targetId = denunciaToDelete ? denunciaToDelete.id : denunciaId;
+  const targetProtocol = denunciaToDelete ? denunciaToDelete.protocolo : undefined;
+
+  const updated = list.filter(d => d.id !== targetId);
   try {
     localStorage.setItem(STORAGE_KEY_DENUNCIAS, JSON.stringify(updated));
   } catch {}
-  addLog('DENUNCIA_EXCLUIDA', `Denúncia ID ${denunciaId}`);
+
+  addLog('DENUNCIA_EXCLUIDA', `Denúncia ID ${targetId}${targetProtocol ? ` (Protocolo ${targetProtocol})` : ''}`);
+
+  // Limpar histórico de mensagens do protocolo excluído
+  if (targetProtocol) {
+    try {
+      const clean = cleanProtocolKey(targetProtocol);
+      const rawChats = localStorage.getItem(STORAGE_KEY_PROTOCOL_CHATS);
+      if (rawChats) {
+        const chats = JSON.parse(rawChats);
+        if (chats[clean]) {
+          delete chats[clean];
+          localStorage.setItem(STORAGE_KEY_PROTOCOL_CHATS, JSON.stringify(chats));
+        }
+      }
+    } catch {}
+
+    try {
+      const lastProto = localStorage.getItem(STORAGE_KEY_LAST_PROTOCOL);
+      if (lastProto && cleanProtocolKey(lastProto) === cleanProtocolKey(targetProtocol)) {
+        localStorage.removeItem(STORAGE_KEY_LAST_PROTOCOL);
+      }
+    } catch {}
+  }
+
+  notifyStorageUpdated();
 
   const supabase = getSupabase();
   if (supabase) {
-    safeSupabaseExec(() => supabase.from('denuncias').delete().eq('id', denunciaId));
+    safeSupabaseExec(() => supabase.from('denuncias').delete().eq('id', targetId));
+    if (targetProtocol) {
+      safeSupabaseExec(() => supabase.from('protocolo_mensagens').delete().eq('protocolo', cleanProtocolKey(targetProtocol)));
+    }
   }
 
   return updated;

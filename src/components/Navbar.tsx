@@ -104,15 +104,15 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, onNavigate, onOpenP
     setIsMenuOpen(false);
   };
 
-  // Verifica se a view atual é uma das que estão guardadas dentro dos três pontinhos
-  const isInternalViewActive = currentView !== 'home' && currentView !== 'denuncia' && currentView !== 'protocolo';
+  // Verifica se a view atual é uma das que estão guardadas exclusivamente dentro dos três pontinhos
+  const isInternalViewActive = !['home', 'denuncia', 'protocolo', 'guia', 'quiz', 'conquistas', 'gestao'].includes(currentView);
 
   return (
     <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-xl border-b border-purple-200/70 px-2 sm:px-4 md:px-6 py-2 transition-all shadow-[0_4px_20px_-4px_rgba(124,58,237,0.08)]">
-      <div className="max-w-7xl mx-auto flex items-center justify-between gap-1.5 sm:gap-3 w-full min-w-0">
+      <div className="max-w-7xl mx-auto flex items-center justify-between gap-1.5 sm:gap-2.5 w-full min-w-0">
         
-        {/* GRUPO PRINCIPAL: 1. PERFIL, 2. LOGO, 3. DENÚNCIA, 4. PROTOCOLO */}
-        <div className="flex items-center gap-1.5 sm:gap-2.5 md:gap-3 min-w-0 overflow-x-auto no-scrollbar py-0.5">
+        {/* GRUPO PRINCIPAL DA ABA DE CIMA */}
+        <div className="flex items-center gap-1.5 sm:gap-2 md:gap-2.5 min-w-0 overflow-x-auto no-scrollbar py-0.5">
           
           {/* 1. PERFIL DO USUÁRIO */}
           <div className="flex-shrink-0">
@@ -140,7 +140,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, onNavigate, onOpenP
           {/* 3. DENÚNCIA */}
           <button
             onClick={() => onNavigate('denuncia')}
-            className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 sm:py-2 rounded-full text-[11px] sm:text-xs font-bold transition-all shadow-xs cursor-pointer flex-shrink-0 ${
+            className={`flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-full text-[11px] sm:text-xs font-bold transition-all shadow-xs cursor-pointer flex-shrink-0 ${
               currentView === 'denuncia'
                 ? 'bg-gradient-to-r from-rose-500 via-red-500 to-rose-600 text-white shadow-rose-500/30 ring-2 ring-rose-400'
                 : 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 hover:text-rose-800 hover:border-rose-300'
@@ -154,7 +154,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, onNavigate, onOpenP
           {/* 4. PROTOCOLO */}
           <button
             onClick={() => onNavigate('protocolo')}
-            className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 sm:py-2 rounded-full text-[11px] sm:text-xs font-bold transition-all shadow-xs cursor-pointer flex-shrink-0 ${
+            className={`flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-full text-[11px] sm:text-xs font-bold transition-all shadow-xs cursor-pointer flex-shrink-0 ${
               currentView === 'protocolo'
                 ? 'bg-gradient-to-r from-purple-600 via-violet-600 to-indigo-600 text-white shadow-purple-500/30 ring-2 ring-purple-400'
                 : 'bg-purple-50 text-purple-800 border border-purple-200 hover:bg-purple-100 hover:text-purple-900 hover:border-purple-300'
@@ -164,6 +164,63 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, onNavigate, onOpenP
             <Search className={`w-3.5 h-3.5 sm:w-4 sm:h-4 text-purple-600 flex-shrink-0 ${currentView === 'protocolo' ? 'animate-pulse text-white' : ''}`} />
             <span className="tracking-wide">Protocolo</span>
           </button>
+
+          {/* 5. GUIA DO SITE */}
+          <button
+            onClick={() => onNavigate('guia')}
+            className={`flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-full text-[11px] sm:text-xs font-bold transition-all shadow-xs cursor-pointer flex-shrink-0 ${
+              currentView === 'guia'
+                ? 'bg-gradient-to-r from-cyan-600 via-teal-600 to-emerald-600 text-white shadow-cyan-500/30 ring-2 ring-cyan-400'
+                : 'bg-cyan-50 text-cyan-800 border border-cyan-200 hover:bg-cyan-100 hover:text-cyan-900 hover:border-cyan-300'
+            }`}
+            title="Guia do Site & Tour Interativo"
+          >
+            <Compass className={`w-3.5 h-3.5 sm:w-4 sm:h-4 text-cyan-600 flex-shrink-0 ${currentView === 'guia' ? 'text-white' : ''}`} />
+            <span className="tracking-wide">Guia do Site</span>
+          </button>
+
+          {/* 6. QUIZ DE RESPEITO */}
+          <button
+            onClick={() => onNavigate('quiz')}
+            className={`flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-full text-[11px] sm:text-xs font-bold transition-all shadow-xs cursor-pointer flex-shrink-0 ${
+              currentView === 'quiz'
+                ? 'bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 text-white shadow-emerald-500/30 ring-2 ring-emerald-400'
+                : 'bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100 hover:text-emerald-900 hover:border-emerald-300'
+            }`}
+            title="Quiz de Respeito e Desafios Educativos"
+          >
+            <BookOpen className={`w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-600 flex-shrink-0 ${currentView === 'quiz' ? 'text-white' : ''}`} />
+            <span className="tracking-wide">Quiz de Respeito</span>
+          </button>
+
+          {/* 7. CONQUISTAS */}
+          <button
+            onClick={() => onNavigate('conquistas')}
+            className={`flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-full text-[11px] sm:text-xs font-bold transition-all shadow-xs cursor-pointer flex-shrink-0 ${
+              currentView === 'conquistas'
+                ? 'bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-white shadow-amber-500/30 ring-2 ring-amber-400'
+                : 'bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 hover:text-amber-900 hover:border-amber-300'
+            }`}
+            title="Conquistas, Insígnias e XP"
+          >
+            <Award className={`w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-600 flex-shrink-0 ${currentView === 'conquistas' ? 'text-white' : ''}`} />
+            <span className="tracking-wide">Conquistas</span>
+          </button>
+
+          {/* 8. PAINEL DE GESTÃO */}
+          <button
+            onClick={() => onNavigate('gestao')}
+            className={`flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-full text-[11px] sm:text-xs font-bold transition-all shadow-xs cursor-pointer flex-shrink-0 ${
+              currentView === 'gestao'
+                ? 'bg-gradient-to-r from-indigo-600 via-purple-700 to-blue-700 text-white shadow-indigo-500/30 ring-2 ring-indigo-400'
+                : 'bg-indigo-50 text-indigo-900 border border-indigo-200 hover:bg-indigo-100 hover:text-indigo-950 hover:border-indigo-300'
+            }`}
+            title="Painel de Gestão e Mediação Escolar (Requer Senha)"
+          >
+            <ShieldCheck className={`w-3.5 h-3.5 sm:w-4 sm:h-4 text-indigo-600 flex-shrink-0 ${currentView === 'gestao' ? 'text-white' : ''}`} />
+            <span className="tracking-wide">Painel de Gestão</span>
+          </button>
+
         </div>
 
         {/* LÁ DO OUTRO LADO: 5. OS TRÊS PONTINHOS (SEMPRE VISÍVEIS) */}

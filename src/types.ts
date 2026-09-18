@@ -51,6 +51,7 @@ export interface Denuncia {
   turno?: string;
   papel_denunciante?: string;
   turma_envolvida?: string;
+  agressor_grupo?: string;
   tipos_selecionados?: string[];
   provas_anexas?: Array<{ nome: string; url?: string; tipo?: string; tamanho?: string }>;
   is_sos?: boolean;
@@ -61,6 +62,7 @@ export interface Denuncia {
   medidas_protecao?: string[];
   termo_acordo?: TermoAcordoConvivencia;
   checkins_acompanhamento?: CheckinAcompanhamento[];
+  historico_acoes?: Array<{ data_hora: string; acao: string; responsavel: string }>;
 }
 
 export type EtapaMediacao = 
@@ -92,8 +94,11 @@ export interface CheckinAcompanhamento {
 export interface MediacaoAction {
   id: string;
   autor: string;
-  acao: string;
-  dataHora: string;
+  acao?: string;
+  dataHora?: string;
+  data_hora?: string;
+  tipo?: string;
+  descricao?: string;
   categoria?: 'Escuta Ativa' | 'Conversa com Responsáveis' | 'Orientação em Sala' | 'Encaminhamento Externo' | 'Acordo de Convivência' | 'Geral';
 }
 

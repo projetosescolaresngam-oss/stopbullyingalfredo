@@ -16,11 +16,14 @@ import {
   salvarTermoAcordo, 
   addCheckinAcompanhamento,
   getProtocolMessages, 
-  sendProtocolMessage 
+  sendProtocolMessage,
+  deleteDenuncia 
 } from '../../services/storageService';
 import { playBreathTone } from '../../services/audioSynthesizer';
+import { printElementById } from '../../services/printService';
 import { ModalEnvioEmail } from './ModalEnvioEmail';
 import { DocumentoOficialModal } from './DocumentoOficialModal';
+import { ModalFotoCompleta } from './ModalFotoCompleta';
 import { 
   HeartHandshake, 
   X, 
@@ -53,7 +56,10 @@ import {
   ChevronRight,
   ShieldAlert,
   GraduationCap,
-  Mail
+  ZoomIn,
+  Image as ImageIcon,
+  Mail,
+  Trash2
 } from 'lucide-react';
 
 interface ModalMediacaoProps {
@@ -61,6 +67,7 @@ interface ModalMediacaoProps {
   onClose: () => void;
   onUpdate: () => void;
   showToast: (msg: string) => void;
+  onDelete?: (denuncia: Denuncia) => void;
 }
 
 // 6 Etapas do Fluxo de Mediação Escolar Restaurativa (SEDUC/CE & Lei 13.185/15)
@@ -147,12 +154,15 @@ export const ModalMediacao: React.FC<ModalMediacaoProps> = ({
   caso, 
   onClose, 
   onUpdate,
-  showToast 
+  showToast,
+  onDelete
 }) => {
   // Aba ativa no modal
   const [tab, setTab] = useState<'fluxo' | 'termo' | 'guia' | 'protecao' | 'chat' | 'relato'>('fluxo');
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [showDocModal, setShowDocModal] = useState(false);
+  const [showConfirmDelete, setShowConfirmDelete] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Estado da etapa restaurativa
   const etapaAtual = caso.etapa_mediacao || (caso.status === 'Resolvido' ? 'pacificado' : caso.status === 'Acolhido' ? 'sessao_dialogo' : 'escuta_inicial');
@@ -179,14 +189,38 @@ export const ModalMediacao: React.FC<ModalMediacaoProps> = ({
   const [checkinNotas, setCheckinNotas] = useState('');
   const [checkinStatusEstudante, setCheckinStatusEstudante] = useState<CheckinAcompanhamento['status_estudante']>('Seguro e Acolhido');
 
+  // Estado do Modal de Foto Ampliada
+  const [selectedFotoModal, setSelectedFotoModal] = useState<{ url: string; nome?: string; tipo?: string; tamanho?: string } | null>(null);
+
   // Estado do Chat
   const [chatMessages, setChatMessages] = useState<ProtocolChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
-  const chatBottomRef = useRef<HTMLDivElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
 
-  // Carregar mensagens do chat do protocolo
+  // Carregar mensagens do chat do protocolo com atualização em tempo real
   useEffect(() => {
-    setChatMessages(getProtocolMessages(caso.protocolo));
+    if (!caso.protocolo) return;
+
+    const reloadMsgs = () => {
+      setChatMessages(getProtocolMessages(caso.protocolo));
+    };
+
+    reloadMsgs();
+
+    const intervalId = setInterval(reloadMsgs, 1500);
+
+    const handleChatUpdate = () => {
+      reloadMsgs();
+    };
+
+    window.addEventListener('protocol_chat_updated', handleChatUpdate);
+    window.addEventListener('storage', handleChatUpdate);
+
+    return () => {
+      clearInterval(intervalId);
+      window.removeEventListener('protocol_chat_updated', handleChatUpdate);
+      window.removeEventListener('storage', handleChatUpdate);
+    };
   }, [caso.protocolo]);
 
   const playSfx = (type: 'success' | 'alert' | 'click') => {
@@ -216,6 +250,28 @@ export const ModalMediacao: React.FC<ModalMediacaoProps> = ({
     toggleDenunciaSOS(caso.id);
     onUpdate();
     showToast(caso.is_sos ? 'Prioridade SOS desmarcada.' : '🚨 Marcado como PRIORIDADE MÁXIMA SOS!');
+  };
+
+  // Excluir denúncia definitivamente
+  const handleExecuteDelete = () => {
+    if (onDelete) {
+      onDelete(caso);
+      onClose();
+      return;
+    }
+    setIsDeleting(true);
+    try {
+      deleteDenuncia(caso.id);
+      playSfx('alert');
+      showToast(`Denúncia ${caso.protocolo} excluída.`);
+      onUpdate();
+      onClose();
+    } catch {
+      showToast('Erro ao excluir a denúncia.');
+    } finally {
+      setIsDeleting(false);
+      setShowConfirmDelete(false);
+    }
   };
 
   // Mudar etapa do fluxo restaurativo
@@ -308,15 +364,20 @@ export const ModalMediacao: React.FC<ModalMediacaoProps> = ({
     playSfx('click');
     const texto = chatInput.trim();
     setChatInput('');
-    const newMsg = sendProtocolMessage(
+    sendProtocolMessage(
       caso.protocolo,
       'coordenacao',
       texto,
       mediadorNome || 'Comissão de Mediação & Acolhimento (EEMTI Alfredo Machado)'
     );
-    setChatMessages(prev => [...prev, newMsg]);
+    setChatMessages(getProtocolMessages(caso.protocolo));
     setTimeout(() => {
-      chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+      if (chatContainerRef.current) {
+        chatContainerRef.current.scrollTo({
+          top: chatContainerRef.current.scrollHeight,
+          behavior: 'smooth'
+        });
+      }
     }, 50);
   };
 
@@ -397,6 +458,18 @@ export const ModalMediacao: React.FC<ModalMediacaoProps> = ({
             >
               <Printer className="w-4 h-4 text-indigo-300" />
               <span className="hidden sm:inline">Imprimir Ofício / Relatório</span>
+            </button>
+
+            <button
+              onClick={() => {
+                playSfx('alert');
+                setShowConfirmDelete(true);
+              }}
+              className="px-3.5 py-2 rounded-xl bg-rose-950/50 hover:bg-rose-900/80 text-rose-200 hover:text-white border border-rose-500/40 transition-all cursor-pointer flex items-center gap-2 text-xs font-bold shadow-sm"
+              title="Excluir denúncia permanentemente"
+            >
+              <Trash2 className="w-4 h-4 text-rose-400" />
+              <span className="hidden sm:inline">Excluir</span>
             </button>
 
             <button
@@ -969,7 +1042,7 @@ export const ModalMediacao: React.FC<ModalMediacaoProps> = ({
                   type="button"
                   onClick={() => {
                     playSfx('click');
-                    window.print();
+                    printElementById('termo-acordo-timbrado', `Termo_Acordo_Restaurativo_${caso.protocolo}`);
                   }}
                   className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-gray-300 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
                 >
@@ -988,7 +1061,10 @@ export const ModalMediacao: React.FC<ModalMediacaoProps> = ({
             </form>
 
             {/* Pré-visualização do Documento Timbrado */}
-            <div className="p-6 sm:p-8 rounded-3xl bg-gradient-to-b from-[#fbfbfa] to-[#f4f4ee] text-[#1c1d22] border-4 border-double border-emerald-800/30 shadow-2xl space-y-5 text-xs font-serif leading-relaxed relative overflow-hidden">
+            <div 
+              id="termo-acordo-timbrado"
+              className="p-6 sm:p-8 rounded-3xl bg-gradient-to-b from-[#fbfbfa] to-[#f4f4ee] text-[#1c1d22] border-4 border-double border-emerald-800/30 shadow-2xl space-y-5 text-xs font-serif leading-relaxed relative overflow-hidden"
+            >
               
               {/* Marca d'água de Autenticidade */}
               <div className="absolute right-4 top-4 opacity-10 pointer-events-none select-none">
@@ -1349,17 +1425,17 @@ export const ModalMediacao: React.FC<ModalMediacaoProps> = ({
             </div>
 
             {/* Mensagens do Chat */}
-            <div className="max-h-72 overflow-y-auto space-y-2.5 p-3 rounded-2xl bg-black/40 border border-white/5 scrollbar-thin scrollbar-thumb-indigo-600/30">
+            <div ref={chatContainerRef} className="max-h-72 overflow-y-auto space-y-2.5 p-3 rounded-2xl bg-black/40 border border-white/5 scrollbar-thin scrollbar-thumb-indigo-600/30">
               {chatMessages.length === 0 ? (
                 <p className="text-center py-8 text-xs text-gray-400">
                   Nenhuma mensagem trocada ainda neste protocolo. Envie uma resposta de acolhimento abaixo.
                 </p>
               ) : (
-                chatMessages.map((msg) => {
+                chatMessages.map((msg, idx) => {
                   const isCoord = msg.remetente === 'coordenacao';
                   return (
                     <div
-                      key={msg.id}
+                      key={`${msg.id || 'msg'}-${idx}`}
                       className={`flex flex-col ${isCoord ? 'items-end' : 'items-start'}`}
                     >
                       <span className="text-[10px] text-gray-400 px-1 mb-0.5">
@@ -1378,7 +1454,6 @@ export const ModalMediacao: React.FC<ModalMediacaoProps> = ({
                   );
                 })
               )}
-              <div ref={chatBottomRef} />
             </div>
 
             {/* Respostas Rápidas Recomendadas */}
@@ -1469,31 +1544,62 @@ export const ModalMediacao: React.FC<ModalMediacaoProps> = ({
                     Evidências e Arquivos Anexados ({caso.provas_anexas.length}):
                   </span>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {caso.provas_anexas.map((anexo, i) => (
-                      <div key={i} className="p-3 rounded-2xl bg-black/60 border border-white/10 text-xs text-gray-200 flex items-start gap-3">
-                        {anexo.url && (anexo.tipo === 'foto' || anexo.tipo === 'print' || anexo.url.startsWith('data:image')) ? (
-                          <img 
-                            src={anexo.url} 
-                            alt={anexo.nome} 
-                            className="w-14 h-14 rounded-xl object-cover border border-indigo-500/30 flex-shrink-0"
-                            referrerPolicy="no-referrer"
-                          />
-                        ) : (
-                          <div className="w-12 h-12 rounded-xl bg-indigo-950/60 border border-indigo-500/30 flex items-center justify-center text-indigo-400 flex-shrink-0">
-                            <Paperclip className="w-5 h-5" />
-                          </div>
-                        )}
-                        <div className="min-w-0 flex-1 space-y-1">
-                          <p className="font-bold text-white text-xs truncate">{anexo.nome}</p>
-                          <span className="text-[10px] uppercase font-mono text-indigo-300 block">
-                            {anexo.tipo || 'Anexo'} • {anexo.tamanho || 'Carregado'}
-                          </span>
-                          {anexo.tipo === 'audio' && anexo.url && (
-                            <audio controls src={anexo.url} className="h-8 w-full max-w-[200px] mt-1" />
+                    {caso.provas_anexas.map((anexo, i) => {
+                      const isImage = anexo.url && (anexo.tipo === 'foto' || anexo.tipo === 'print' || anexo.tipo === 'imagem' || anexo.url.startsWith('data:image'));
+                      return (
+                        <div key={i} className="p-3 rounded-2xl bg-black/60 border border-white/10 text-xs text-gray-200 flex items-start gap-3 relative group">
+                          {isImage ? (
+                            <div 
+                              className="relative w-16 h-16 rounded-xl overflow-hidden border border-indigo-500/40 cursor-pointer group/img flex-shrink-0"
+                              onClick={() => setSelectedFotoModal({
+                                url: anexo.url!,
+                                nome: anexo.nome,
+                                tipo: anexo.tipo,
+                                tamanho: anexo.tamanho
+                              })}
+                              title="Clique para ver foto completa"
+                            >
+                              <img 
+                                src={anexo.url} 
+                                alt={anexo.nome} 
+                                className="w-full h-full object-cover transition-transform duration-300 group-hover/img:scale-110"
+                                referrerPolicy="no-referrer"
+                              />
+                              <div className="absolute inset-0 bg-black/50 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center text-white">
+                                <ZoomIn className="w-5 h-5 text-indigo-300" />
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="w-12 h-12 rounded-xl bg-indigo-950/60 border border-indigo-500/30 flex items-center justify-center text-indigo-400 flex-shrink-0">
+                              <Paperclip className="w-5 h-5" />
+                            </div>
                           )}
+                          <div className="min-w-0 flex-1 space-y-1">
+                            <p className="font-bold text-white text-xs truncate">{anexo.nome}</p>
+                            <span className="text-[10px] uppercase font-mono text-indigo-300 block">
+                              {anexo.tipo || 'Anexo'} • {anexo.tamanho || 'Carregado'}
+                            </span>
+                            {isImage && (
+                              <button
+                                type="button"
+                                onClick={() => setSelectedFotoModal({
+                                  url: anexo.url!,
+                                  nome: anexo.nome,
+                                  tipo: anexo.tipo,
+                                  tamanho: anexo.tamanho
+                                })}
+                                className="text-[10px] text-indigo-300 hover:text-indigo-100 underline font-bold flex items-center gap-1 mt-0.5 cursor-pointer"
+                              >
+                                <ZoomIn className="w-3 h-3" /> Ver Foto Completa
+                              </button>
+                            )}
+                            {anexo.tipo === 'audio' && anexo.url && (
+                              <audio controls src={anexo.url} className="h-8 w-full max-w-[200px] mt-1" />
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -1531,6 +1637,71 @@ export const ModalMediacao: React.FC<ModalMediacaoProps> = ({
           denuncia={caso}
           onClose={() => setShowDocModal(false)}
         />
+      )}
+
+      {/* Modal de Foto Ampliada (Lightbox) */}
+      {selectedFotoModal && (
+        <ModalFotoCompleta
+          fotoUrl={selectedFotoModal.url}
+          nomeArquivo={selectedFotoModal.nome}
+          protocolo={caso.protocolo}
+          tipoArquivo={selectedFotoModal.tipo}
+          tamanhoArquivo={selectedFotoModal.tamanho}
+          onClose={() => setSelectedFotoModal(null)}
+        />
+      )}
+
+      {/* Modal de Confirmação de Exclusão de Denúncia */}
+      {showConfirmDelete && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn">
+          <div className="w-full max-w-md rounded-3xl bg-[#0e1224] border-2 border-rose-500/80 p-6 space-y-5 shadow-2xl">
+            <div className="flex items-center gap-3 border-b border-white/10 pb-3.5">
+              <div className="w-10 h-10 rounded-2xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400 flex-shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-white text-base">Excluir Esta Denúncia?</h3>
+                <span className="text-xs text-rose-300 font-mono font-bold">Protocolo: {caso.protocolo}</span>
+              </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-rose-950/30 border border-rose-500/30 space-y-2 text-xs text-rose-200">
+              <p className="font-semibold text-white flex items-center gap-1.5">
+                <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0" />
+                Atenção: Esta ação é definitiva e irreversível!
+              </p>
+              <p className="text-[11px] leading-relaxed text-slate-300">
+                O registro será removido permanentemente da base de dados e do histórico escolar. Todas as evidências anexas e o histórico de mensagens do chat seguro deste protocolo serão apagados.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setShowConfirmDelete(false)}
+                className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-slate-300 hover:text-white font-bold text-xs transition-all cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={handleExecuteDelete}
+                className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs flex items-center gap-2 shadow-lg shadow-rose-600/40 transition-all cursor-pointer"
+              >
+                {isDeleting ? (
+                  <span>Excluindo...</span>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    <span>Sim, Excluir Definitivamente</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>

@@ -55,3 +55,240 @@
   animation: floatSlow 8s ease-in-out infinite;
 }
 
+/* ========================================================================== */
+/* ESTILOS EXCLUSIVOS DE IMPRESSÃO (A4 DE ALTA PRECISÃO)                      */
+/* ========================================================================== */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 6mm 8mm;
+  }
+
+  html, body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Oculta rigorosamente menus, navegação, cabeçalhos do site e rodapé do app */
+  nav,
+  footer,
+  .print\:hidden,
+  .no-print,
+  #app-navbar,
+  #app-footer {
+    display: none !important;
+  }
+
+  /* Quando o modal de documento oficial está aberto para impressão */
+  body.documento-oficial-open #root > div > nav,
+  body.documento-oficial-open #root > div > footer,
+  body.documento-oficial-open #root > div > .fixed.inset-0.pointer-events-none,
+  body.documento-oficial-open #root > div > main > div > *:not(:has(#printable-official-doc)),
+  body.documento-oficial-open #root > div > main > div > div:not(:has(#printable-official-doc)) {
+    display: none !important;
+  }
+
+  body.documento-oficial-open .fixed.inset-0.z-50 {
+    position: static !important;
+    background: #ffffff !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+    display: block !important;
+  }
+
+  body.documento-oficial-open .w-full.max-w-4xl {
+    max-width: 100% !important;
+    background: #ffffff !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+  }
+
+  /* ========================================================================== */
+  /* LAYOUT OFICIAL RESPONSIVO AO FORMATO A4 (210mm x 297mm)                   */
+  /* ========================================================================== */
+  #printable-official-doc,
+  #printable-relatorio-estatisticas,
+  .print-a4-target {
+    position: static !important;
+    width: 100% !important;
+    max-width: 194mm !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-size: 8.5pt !important;
+    line-height: 1.25 !important;
+    box-sizing: border-box !important;
+    display: block !important;
+    visibility: visible !important;
+  }
+
+  /* ========================================================================== */
+  /* CABEÇALHO E METADADOS DO OFÍCIO (OTIMIZAÇÃO COMPACTA NO TOPO DA FOLHA A4)  */
+  /* ========================================================================== */
+  #printable-official-doc .official-header,
+  #printable-official-doc .text-center.border-b-2 {
+    margin-bottom: 1.5mm !important;
+    padding-bottom: 1.2mm !important;
+    border-bottom: 1.5pt solid #0f172a !important;
+    flex-shrink: 0 !important;
+  }
+
+  /* Brasões / Selos laterais reduzidos para não inflar a altura vertical */
+  #printable-official-doc .official-logo-seal,
+  #printable-official-doc .official-header .rounded-full.shrink-0 {
+    width: 28px !important;
+    height: 28px !important;
+    min-width: 28px !important;
+    font-size: 6pt !important;
+    padding: 2px !important;
+    border-width: 1px !important;
+    flex-shrink: 0 !important;
+  }
+
+  /* Títulos institucionais com entrelinha compacta e sem margens excedentes */
+  #printable-official-doc .official-header h1 {
+    font-size: 10.5pt !important;
+    line-height: 1.15 !important;
+    margin: 1px 0 !important;
+    letter-spacing: -0.01em !important;
+    font-weight: 900 !important;
+  }
+
+  #printable-official-doc .official-header h2 {
+    font-size: 8.5pt !important;
+    line-height: 1.15 !important;
+    margin: 0 !important;
+    font-weight: 800 !important;
+  }
+
+  #printable-official-doc .official-header p {
+    font-size: 6.5pt !important;
+    line-height: 1.1 !important;
+    margin: 0 !important;
+  }
+
+  /* Faixa horizontal de Metadados (Protocolo, Data, Status): Compacta, alinhada e com flex-shrink: 0 */
+  #printable-official-doc .official-metadata-bar,
+  #printable-official-doc .grid-cols-3.bg-slate-100 {
+    margin-top: 1.2mm !important;
+    margin-bottom: 1.2mm !important;
+    padding: 1.2mm 2.5mm !important;
+    font-size: 7.5pt !important;
+    line-height: 1.15 !important;
+    background-color: #f8fafc !important;
+    border: 0.75pt solid #cbd5e1 !important;
+    border-radius: 4px !important;
+    gap: 2mm !important;
+    flex-shrink: 0 !important;
+    position: relative !important;
+    z-index: 1 !important;
+  }
+
+  #printable-official-doc .official-metadata-bar span,
+  #printable-official-doc .official-metadata-bar strong {
+    font-size: 7.5pt !important;
+    line-height: 1.15 !important;
+  }
+
+  #printable-official-doc .official-metadata-bar .badge-status {
+    padding: 1px 4px !important;
+    font-size: 6.5pt !important;
+    border-radius: 2px !important;
+    flex-shrink: 0 !important;
+  }
+
+  /* Página do Ofício Principal: Distribuição flexível vertical que previne sobreposição no rodapé */
+  #printable-official-doc .official-oficio-page {
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: space-between !important;
+    width: 100% !important;
+    max-height: 280mm !important; /* Altura máxima estrita para caber exatamente em 1 página A4 */
+    box-sizing: border-box !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid-page !important;
+    page-break-before: avoid !important;
+    break-before: avoid !important;
+    page-break-after: auto !important;
+    break-after: auto !important;
+    overflow: hidden !important;
+  }
+
+  /* Previne encolhimento ('flex-shrink: 0') e quebras nos elementos estruturais do ofício */
+  #printable-official-doc .official-oficio-page > * {
+    flex-shrink: 0 !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  /* Regras explícitas de 'flex-shrink: 0' para cabeçalho, metadados, assinaturas e rodapé */
+  #printable-official-doc .official-header,
+  #printable-official-doc .official-metadata-bar,
+  #printable-official-doc .official-signatures,
+  #printable-official-doc .official-footer {
+    flex-shrink: 0 !important;
+  }
+
+  /* Rodapé do documento: Ancorado na base da folha A4 com recuo de 6mm para não sobrepor conteúdo */
+  #printable-official-doc .official-footer {
+    margin-top: auto !important;
+    margin-bottom: 6mm !important;
+    position: relative !important;
+    clear: both !important;
+    z-index: 10 !important;
+  }
+
+  /* Limitação preventiva de altura do relato para nunca vazar para uma segunda página */
+  #printable-official-doc .official-relato-box {
+    max-height: 32mm !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    display: -webkit-box !important;
+    -webkit-line-clamp: 5 !important;
+    -webkit-box-orient: vertical !important;
+    flex-shrink: 1 !important;
+    font-size: 7.5pt !important;
+  }
+
+  /* ========================================================================== */
+  /* 'PAGE-BREAK-BEFORE: ALWAYS' SELETIVO PARA FOLHA ANEXA / EVIDÊNCIAS         */
+  /* ========================================================================== */
+  #printable-official-doc .official-anexos-page {
+    page-break-before: always !important;
+    break-before: page !important;
+    page-break-inside: auto !important;
+    break-inside: auto !important;
+    flex-shrink: 0 !important;
+    margin-top: 0 !important;
+    padding-top: 2mm !important;
+    border-top: none !important;
+  }
+
+  #printable-official-doc .official-anexos-page:empty {
+    page-break-before: auto !important;
+    break-before: auto !important;
+    display: none !important;
+  }
+
+  #printable-official-doc .official-anexos-page .page-break-inside-avoid {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    flex-shrink: 0 !important;
+  }
+}
+

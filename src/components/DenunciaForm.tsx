@@ -57,6 +57,19 @@ interface AttachedProof {
   tamanho?: string;
 }
 
+const TURMAS_PREDEFINIDAS = [
+  '1º Ano B',
+  '1º Ano C',
+  '2º Ano A',
+  '2º Ano B',
+  '2º Ano C',
+  '3º Ano A',
+  '3º Ano B',
+  '3º Ano C',
+  '3º Ano D',
+  'Não Escolar / Outra Turma'
+];
+
 export const DenunciaForm: React.FC<DenunciaFormProps> = ({ 
   onBack, 
   onDenunciaSent,
@@ -75,10 +88,11 @@ export const DenunciaForm: React.FC<DenunciaFormProps> = ({
   const [local, setLocal] = useState<string>('Pátio / Recreio');
   const [turno, setTurno] = useState<string>('Manhã');
 
-  // Passo 3: Papel, Urgência e Turma
+  // Passo 3: Papel, Urgência, Turma e Agressor
   const [papel, setPapel] = useState<string>('Sou a Vítima');
   const [urgencia, setUrgencia] = useState<string>('Média');
-  const [turma, setTurma] = useState<string>('');
+  const [turma, setTurma] = useState<string>('1º Ano B');
+  const [agressorGrupo, setAgressorGrupo] = useState<string>('');
 
   // Passo 4: Relato e Provas (Opcional)
   const [descricao, setDescricao] = useState<string>('');
@@ -329,6 +343,18 @@ export const DenunciaForm: React.FC<DenunciaFormProps> = ({
   // Enviar Denúncia
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!agressorGrupo.trim()) {
+      alert('Por favor, informe quem foi o agressor ou grupo de pessoas envolvidas. Este campo é obrigatório.');
+      setCurrentStep(3);
+      return;
+    }
+
+    if (!descricao.trim()) {
+      alert('Por favor, escreva a descrição do caso. O relato é obrigatório.');
+      return;
+    }
+
     playSfx('success');
 
     const randNum = Math.floor(1000 + Math.random() * 9000);
@@ -338,12 +364,13 @@ export const DenunciaForm: React.FC<DenunciaFormProps> = ({
       protocolo: protocolCode,
       tipo_violencia: tiposSelecionados.length > 0 ? tiposSelecionados.join(', ') : 'Geral',
       local_escola: local,
-      descricao: descricao.trim() || 'Relato submetido sem detalhes textuais adicionais (opcional).',
+      descricao: descricao.trim(),
       nivel_gravidade: urgencia === 'Crítica SOS' ? 'Grave' : urgencia === 'Alta' ? 'Grave' : urgencia === 'Média' ? 'Recorrente' : 'Leve',
       frequencia,
       turno,
       papel_denunciante: papel,
-      turma_envolvida: turma.trim() || undefined,
+      turma_envolvida: turma.trim() || '1º Ano B',
+      agressor_grupo: agressorGrupo.trim(),
       tipos_selecionados: tiposSelecionados,
       provas_anexas: anexos.map(a => ({ nome: a.nome, tipo: a.tipo, tamanho: a.tamanho, url: a.url }))
     });
@@ -380,7 +407,8 @@ export const DenunciaForm: React.FC<DenunciaFormProps> = ({
     setTurno('Manhã');
     setPapel('Sou a Vítima');
     setUrgencia('Média');
-    setTurma('');
+    setTurma('1º Ano B');
+    setAgressorGrupo('');
     setDescricao('');
     setAnexos([]);
   };
@@ -488,6 +516,20 @@ export const DenunciaForm: React.FC<DenunciaFormProps> = ({
               <span className="text-purple-900 font-bold uppercase block text-[10px]">Papel & Gravidade:</span>
               <p className="font-semibold text-[#241e33]">
                 {papel} • Risco {urgencia}
+              </p>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-purple-50/50 border border-purple-100 space-y-1">
+              <span className="text-purple-900 font-bold uppercase block text-[10px]">Turma Envolvida:</span>
+              <p className="font-semibold text-[#241e33]">
+                {submittedDenuncia.turma_envolvida || turma}
+              </p>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-purple-50/50 border border-purple-100 space-y-1">
+              <span className="text-purple-900 font-bold uppercase block text-[10px]">Agressor / Grupo Envolvido:</span>
+              <p className="font-semibold text-[#241e33]">
+                {submittedDenuncia.agressor_grupo || agressorGrupo}
               </p>
             </div>
 
@@ -1049,18 +1091,47 @@ export const DenunciaForm: React.FC<DenunciaFormProps> = ({
               </div>
             </div>
 
-            {/* Seção 3: Turma ou ano escolar */}
+            {/* Seção 3: Turma ou Ano Escolar Pré-definido */}
             <div className="space-y-2">
-              <label className="text-xs font-black uppercase text-purple-900 tracking-wider block">
-                Turma ou Ano Escolar Envolvido (Opcional):
+              <label className="text-xs font-black uppercase text-purple-900 tracking-wider flex items-center justify-between">
+                <span>Turma ou Ano Escolar Envolvido:</span>
+                <span className="text-[10px] font-bold text-rose-700 bg-rose-100 px-2 py-0.5 rounded-full border border-rose-200 uppercase">
+                  * Obrigatório
+                </span>
+              </label>
+
+              <select
+                value={turma}
+                onChange={(e) => {
+                  playSfx('click');
+                  setTurma(e.target.value);
+                }}
+                className="w-full p-3.5 rounded-2xl bg-white border border-purple-200 text-sm font-bold text-[#241e33] focus:border-purple-500 focus:ring-2 focus:ring-purple-200 focus:outline-none transition-all cursor-pointer shadow-xs"
+              >
+                {TURMAS_PREDEFINIDAS.map((t) => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Seção 4: Quem foi o agressor ou grupo de pessoas (Obrigatório) */}
+            <div className="space-y-2">
+              <label className="text-xs font-black uppercase text-purple-900 tracking-wider flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <Users className="w-3.5 h-3.5 text-purple-600" /> Quem foi o agressor ou grupo de pessoas?
+                </span>
+                <span className="text-[10px] font-bold text-rose-700 bg-rose-100 px-2 py-0.5 rounded-full border border-rose-200 uppercase">
+                  * Obrigatório
+                </span>
               </label>
 
               <input
                 type="text"
-                value={turma}
-                onChange={(e) => setTurma(e.target.value)}
-                placeholder="Ex: 8º Ano B, 1º Ano Ensino Médio, Turma da tarde..."
-                className="w-full p-3.5 rounded-2xl bg-white border border-purple-200 text-sm text-[#241e33] placeholder-[#8a7f9d] focus:border-purple-500 focus:ring-2 focus:ring-purple-200 focus:outline-none transition-all"
+                required
+                value={agressorGrupo}
+                onChange={(e) => setAgressorGrupo(e.target.value)}
+                placeholder="Ex: Nome da pessoa, apelido, características ou grupo de alunos envolvidos..."
+                className="w-full p-3.5 rounded-2xl bg-white border border-purple-200 text-sm text-[#241e33] placeholder-[#8a7f9d] focus:border-purple-500 focus:ring-2 focus:ring-purple-200 focus:outline-none transition-all shadow-xs"
               />
             </div>
 
@@ -1080,6 +1151,14 @@ export const DenunciaForm: React.FC<DenunciaFormProps> = ({
               <button
                 type="button"
                 onClick={() => {
+                  if (!turma) {
+                    alert('Por favor, escolha a turma envolvida.');
+                    return;
+                  }
+                  if (!agressorGrupo.trim()) {
+                    alert('Por favor, informe quem foi o agressor ou o grupo de pessoas envolvidas. Este campo é obrigatório.');
+                    return;
+                  }
                   playSfx('step');
                   setCurrentStep(4);
                 }}
@@ -1105,12 +1184,12 @@ export const DenunciaForm: React.FC<DenunciaFormProps> = ({
                   <h2 className="font-display font-black text-xl sm:text-2xl text-[#241e33] flex items-center gap-2">
                     <FileText className="w-5 h-5 text-purple-600" /> Passo 4: Descrição dos Detalhes & Anexo de Provas
                   </h2>
-                  <span className="text-[10px] font-bold text-purple-800 bg-purple-100 px-2 py-0.5 rounded-full border border-purple-200">
-                    (Opcional)
+                  <span className="text-[10px] font-bold text-rose-700 bg-rose-100 px-2 py-0.5 rounded-full border border-rose-200 uppercase">
+                    * Obrigatório
                   </span>
                 </div>
                 <p className="text-xs sm:text-sm text-[#5c546d]">
-                  Você pode relatar com suas próprias palavras o ocorrido e, se tiver, anexar evidências. <strong>Tanto o relato quanto os anexos são opcionais.</strong>
+                  Relate com suas próprias palavras o ocorrido <strong>(a descrição é obrigatória)</strong>. O anexo de fotos, áudios ou provas é opcional.
                 </p>
               </div>
 
@@ -1399,8 +1478,8 @@ export const DenunciaForm: React.FC<DenunciaFormProps> = ({
                 <label className="text-xs font-black uppercase text-purple-900 tracking-wider flex items-center gap-1.5">
                   <FileText className="w-3.5 h-3.5 text-purple-600" /> Descreva o ocorrido na caixa de mensagem:
                 </label>
-                <span className="text-[10px] font-bold text-purple-800 bg-purple-100 px-2 py-0.5 rounded-full border border-purple-200">
-                  OPCIONAL
+                <span className="text-[10px] font-bold text-rose-700 bg-rose-100 px-2 py-0.5 rounded-full border border-rose-200 uppercase">
+                  * OBRIGATÓRIO
                 </span>
               </div>
 
@@ -1416,9 +1495,10 @@ export const DenunciaForm: React.FC<DenunciaFormProps> = ({
               </div>
 
               <textarea
+                required
                 value={descricao}
                 onChange={(e) => setDescricao(e.target.value)}
-                placeholder="Conte com suas palavras como aconteceu, o que foi dito ou feito, se houve ameaças, apelidos, mensagens em redes sociais ou testemunhas presentes... Seu relato nesta caixa de mensagem possui proteção legal e será lido exclusivamente pela equipe pedagógica responsável."
+                placeholder="Conte detalhadamente com suas palavras como aconteceu, o que foi dito ou feito, quem participou, se houve ameaças, apelidos, agressões ou testemunhas... Seu relato nesta caixa é obrigatório e possui proteção legal confidencial."
                 className="w-full h-36 p-4 rounded-2xl bg-white border border-purple-200 text-xs text-[#241e33] placeholder-[#8a7f9d] focus:border-purple-500 focus:ring-2 focus:ring-purple-200 focus:outline-none transition-all resize-none leading-relaxed shadow-xs"
               />
             </div>
