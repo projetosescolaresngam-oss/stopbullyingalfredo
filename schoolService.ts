@@ -10,6 +10,7 @@
 
 import { PerfilEscola, CombinacaoTurma } from '../types';
 import { getSupabase, isSupabaseConfigured } from './supabaseClient';
+import { getGestaoSessionToken } from './adminAuthService';
 
 const STORAGE_KEY_ESCOLAS = 'stopbullying_perfis_escolas_v1';
 const STORAGE_KEY_ATIVA_ID = 'stopbullying_escola_ativa_id_v1';
@@ -368,40 +369,52 @@ export const salvarEscola = (
   }));
   window.dispatchEvent(new Event('storage'));
 
-  // Sincronização em nuvem com Supabase (PostgreSQL)
+  // Sincronização em nuvem com Supabase (PostgreSQL) com RPC segura autenticada
   const supabase = getSupabase();
   if (supabase && isSupabaseConfigured()) {
-    try {
-      supabase.from('perfis_escolas').upsert({
-        id: escolaAtualizada.id,
-        nome: escolaAtualizada.nome,
-        sigla: escolaAtualizada.sigla || null,
-        codigo_inep: escolaAtualizada.codigo_inep || null,
-        cidade: escolaAtualizada.cidade,
-        estado: escolaAtualizada.estado,
-        rede: escolaAtualizada.rede,
-        orgao_regional: escolaAtualizada.orgao_regional,
-        conselho_tutelar_local: escolaAtualizada.conselho_tutelar_local,
-        endereco: escolaAtualizada.endereco || null,
-        telefone: escolaAtualizada.telefone || null,
-        email_institucional: escolaAtualizada.email_institucional || null,
-        email_conselho_tutelar: escolaAtualizada.email_conselho_tutelar || null,
-        diretor: escolaAtualizada.diretor || null,
-        coordenador_pedagogico: escolaAtualizada.coordenador_pedagogico || null,
-        comissao_mediacao_nome: escolaAtualizada.comissao_mediacao_nome || null,
-        ativa: escolaAtualizada.ativa,
-        turmas_cadastradas: escolaAtualizada.turmas_cadastradas || [],
-        estrutura_escolar: escolaAtualizada.estrutura_escolar || [],
-        logo_tipo: escolaAtualizada.logo_tipo || 'padrao',
-        descricao: escolaAtualizada.descricao || null,
-        criada_em: escolaAtualizada.criada_em,
-        updated_at: new Date().toISOString()
-      }).then(() => {}, (err: unknown) => {
-        console.warn('[Supabase Upsert Escola]', err);
-      });
-    } catch (err) {
-      console.warn('[Supabase Sync Escola]', err);
-    }
+    const escolaPayload = {
+      id: escolaAtualizada.id,
+      nome: escolaAtualizada.nome,
+      sigla: escolaAtualizada.sigla || null,
+      codigo_inep: escolaAtualizada.codigo_inep || null,
+      cidade: escolaAtualizada.cidade,
+      estado: escolaAtualizada.estado,
+      rede: escolaAtualizada.rede,
+      orgao_regional: escolaAtualizada.orgao_regional,
+      conselho_tutelar_local: escolaAtualizada.conselho_tutelar_local,
+      endereco: escolaAtualizada.endereco || null,
+      telefone: escolaAtualizada.telefone || null,
+      email_institucional: escolaAtualizada.email_institucional || null,
+      email_conselho_tutelar: escolaAtualizada.email_conselho_tutelar || null,
+      diretor: escolaAtualizada.diretor || null,
+      coordenador_pedagogico: escolaAtualizada.coordenador_pedagogico || null,
+      comissao_mediacao_nome: escolaAtualizada.comissao_mediacao_nome || null,
+      ativa: escolaAtualizada.ativa,
+      turmas_cadastradas: escolaAtualizada.turmas_cadastradas || [],
+      estrutura_escolar: escolaAtualizada.estrutura_escolar || [],
+      logo_tipo: escolaAtualizada.logo_tipo || 'padrao',
+      descricao: escolaAtualizada.descricao || null,
+      criada_em: escolaAtualizada.criada_em,
+      updated_at: new Date().toISOString()
+    };
+
+    (async () => {
+      try {
+        const sessionToken = getGestaoSessionToken();
+        // 1. Prioriza RPC de gestão com validação de sessão segura no PostgreSQL
+        const { data: rpcData, error: rpcError } = await supabase.rpc('gestao_salvar_escola', {
+          p_session_token: sessionToken,
+          p_escola: escolaPayload
+        });
+
+        if (rpcError) {
+          // 2. Fallback de compatibilidade se a RPC ainda não tiver sido criada no banco
+          await supabase.from('perfis_escolas').upsert(escolaPayload);
+        }
+      } catch (err) {
+        console.warn('[Supabase Sync Escola Warn]', err);
+      }
+    })();
   }
 
   return escolaAtualizada;
@@ -419,12 +432,21 @@ export const excluirEscola = (escolaId: string): boolean => {
   const novaLista = escolas.filter(e => e.id !== escolaId);
   localStorage.setItem(STORAGE_KEY_ESCOLAS, JSON.stringify(novaLista));
 
-  // Sincronização com Supabase (exclusão remota)
+  // Sincronização com Supabase (exclusão remota via RPC autenticada)
   const supabase = getSupabase();
   if (supabase && isSupabaseConfigured()) {
-    try {
-      supabase.from('perfis_escolas').delete().eq('id', escolaId).then(() => {}, () => {});
-    } catch {}
+    (async () => {
+      try {
+        const sessionToken = getGestaoSessionToken();
+        const { error: rpcError } = await supabase.rpc('gestao_excluir_escola', {
+          p_session_token: sessionToken,
+          p_escola_id: escolaId
+        });
+        if (rpcError) {
+          await supabase.from('perfis_escolas').delete().eq('id', escolaId);
+        }
+      } catch {}
+    })();
   }
 
   // Se a escola removida era a ativa, ativa a primeira remanescente

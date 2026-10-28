@@ -27,9 +27,9 @@ import {
 import { playBreathTone } from '../../services/audioSynthesizer';
 import { printElementById } from '../../services/printService';
 import { getEscolaAtiva } from '../../services/schoolService';
-import { ModalEnvioEmail } from './ModalEnvioEmail';
+
 import { DocumentoOficialModal } from './DocumentoOficialModal';
-import { ModalFotoCompleta } from './ModalFotoCompleta';
+import { ModalEnvioEmail, ModalFotoCompleta } from './GestaoModals';
 import { useAutoScrollIntoView } from '../../hooks/useAutoScrollIntoView';
 import { 
   HeartHandshake, 

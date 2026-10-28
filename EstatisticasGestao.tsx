@@ -31,13 +31,16 @@ import {
 import { playBreathTone } from '../../services/audioSynthesizer';
 import { printElementById } from '../../services/printService';
 import { CASOS_DIAGNOSTICO_EEMTI, METADADOS_PESQUISA_EEMTI } from '../../data/diagnosticoEEMTI';
-import { GraficoDonut, DonutSegment } from './estatisticas/GraficoDonut';
-import { GraficoLinhaTempo } from './estatisticas/GraficoLinhaTempo';
-import { MapaAmbientes } from './estatisticas/MapaAmbientes';
-import { FunilRestaurativo } from './estatisticas/FunilRestaurativo';
-import { RecomendacoesGestao } from './estatisticas/RecomendacoesGestao';
-import { MetricasAcessosSite } from './estatisticas/MetricasAcessosSite';
-import { getSemaforoInfo } from '../../utils/semaforoUtils';
+import { 
+  GraficoDonut, 
+  DonutSegment, 
+  GraficoLinhaTempo, 
+  MapaAmbientes, 
+  FunilRestaurativo, 
+  RecomendacoesGestao, 
+  MetricasAcessosSite 
+} from './EstatisticasCharts';
+import { getSemaforoInfo } from '../../utils';
 
 interface EstatisticasGestaoProps {
   denuncias: Denuncia[];

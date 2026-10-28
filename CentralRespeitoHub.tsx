@@ -21,7 +21,7 @@ import {
   unlockEasterEgg,
   isEasterEggUnlocked,
   ChallengeUserProgress
-} from '../../utils/centralRespeitoStorage';
+} from '../../utils';
 import { 
   getCompletedQuizIds, 
   getNextRecommendedQuiz, 
@@ -41,13 +41,10 @@ import {
 import { useApp } from '../../AppContext';
 import { QuizPlayer } from './QuizPlayer';
 import { InteractiveStoryPlayer } from './InteractiveStoryPlayer';
-import { QuizResultsView } from './QuizResultsView';
-import { AnswerRecord } from './QuizReviewModal';
+import { QuizResultsView, AnswerRecord, SingleQuizPlayerModal } from './QuizModals';
 import { PerformanceRadarView } from './PerformanceRadarView';
 import { MapaDeDesafios } from './MapaDeDesafios';
-import { SingleQuizPlayerModal } from './SingleQuizPlayerModal';
-import { NarrativeHubView } from './narrative/NarrativeHubView';
-import { NarrativePlayerModal } from './narrative/NarrativePlayerModal';
+import { NarrativeHubView, NarrativePlayerModal } from './NarrativeModule';
 import { useAutoScrollIntoView } from '../../hooks/useAutoScrollIntoView';
 import { 
   BookOpen, 
@@ -76,11 +73,12 @@ import {
 
 interface CentralRespeitoHubProps {
   onBack: () => void;
+  initialTab?: 'quizzes' | 'mapa' | 'historias' | 'competencias';
 }
 
 type ActiveView = 'hub' | 'playing_quiz' | 'playing_story' | 'results';
 
-export const CentralRespeitoHub: React.FC<CentralRespeitoHubProps> = ({ onBack }) => {
+export const CentralRespeitoHub: React.FC<CentralRespeitoHubProps> = ({ onBack, initialTab = 'quizzes' }) => {
   const { userProfile, studentIdentity, recordQuizCompleted, awardXp } = useApp();
   const studentKey = studentIdentity?.studentSeed || studentIdentity?.code || 'anonimo_padrao';
 
@@ -90,7 +88,7 @@ export const CentralRespeitoHub: React.FC<CentralRespeitoHubProps> = ({ onBack }
   const [selectedStory, setSelectedStory] = useState<NarrativeStory | null>(null);
   
   // Abas do Hub: 'quizzes' (banco massivo de 100 quizzes nos 4 níveis) | 'mapa' | 'historias' | 'competencias'
-  const [hubTab, setHubTab] = useState<'quizzes' | 'mapa' | 'historias' | 'competencias'>('quizzes');
+  const [hubTab, setHubTab] = useState<'quizzes' | 'mapa' | 'historias' | 'competencias'>(initialTab);
   
   // Filtros da Arena de Quizzes (100)
   const [quizDiffFilter, setQuizDiffFilter] = useState<DifficultyLevel | 'todos'>('todos');
@@ -112,6 +110,13 @@ export const CentralRespeitoHub: React.FC<CentralRespeitoHubProps> = ({ onBack }
 
   // Auto-scroll suave
   useAutoScrollIntoView({ trigger: hubTab, delay: 60, block: 'nearest' });
+
+  // Sincroniza a aba quando a prop initialTab mudar externamente
+  useEffect(() => {
+    if (initialTab) {
+      setHubTab(initialTab);
+    }
+  }, [initialTab]);
 
   // Atualiza progresso ao voltar para o hub
   useEffect(() => {

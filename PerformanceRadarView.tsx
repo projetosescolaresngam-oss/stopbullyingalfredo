@@ -6,11 +6,11 @@ import {
   LongitudinalSummary, 
   StageDefinition, 
   StageLevel 
-} from '../../services/competencies/types';
+} from '../../services/competencies';
 import { 
   COMPETENCY_METADATA, 
   COMPETENCY_STAGES 
-} from '../../services/competencies/definitions';
+} from '../../services/competencies';
 import { 
   HeartHandshake, 
   Users, 

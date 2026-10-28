@@ -7,7 +7,7 @@ import { DenunciaForm } from './components/DenunciaForm';
 import { ProtocoloView } from './components/ProtocoloView';
 import { TriagemModule } from './components/TriagemModule';
 import { ApoioEmocional } from './components/ApoioEmocional';
-import { QuizEducativo } from './components/QuizEducativo';
+import { CentralRespeitoHub } from './components/centralRespeito/CentralRespeitoHub';
 import { SOSModule } from './components/SOSModule';
 import { CearaCientificoBanner } from './components/CearaCientificoBanner';
 import { GaleriaProjeto } from './components/GaleriaProjeto';
@@ -18,15 +18,16 @@ import { CosmeticsCustomizer } from './CosmeticsCustomizer';
 import { EducativoMatrizView } from './EducativoMatrizView';
 import { GuiaDoRespeitoView } from './GuiaDoRespeitoView';
 import { UserProfileModal } from './UserProfileModal';
-import { AchievementUnlockModal } from './AchievementUnlockModal';
-import { RewardUnlockModal } from './RewardUnlockModal';
+import { AchievementUnlockModal, RewardUnlockModal } from './GamificationModals';
 import { LoadingScreen } from './LoadingScreen';
 import { GlobalScrollEnhancer } from './components/GlobalScrollEnhancer';
 import { AuthModal } from './components/account/AuthModal';
-import { AccessibilityToolbar } from './components/accessibility/AccessibilityToolbar';
-import { ReadingRulerGuide } from './components/accessibility/ReadingRulerGuide';
-import { SelectionSpeechReader } from './components/accessibility/SelectionSpeechReader';
-import { VLibrasWidget } from './components/accessibility/VLibrasWidget';
+import { 
+  AccessibilityToolbar, 
+  ReadingRulerGuide, 
+  SelectionSpeechReader, 
+  VLibrasWidget 
+} from './components/accessibility/AccessibilityToolbar';
 import { addLog } from './services/storageService';
 import { recordSiteAccess } from './services/analyticsService';
 
@@ -228,9 +229,10 @@ export default function App() {
           />
         )}
 
-        {currentView === 'quiz' && (
-          <QuizEducativo 
+        {(currentView === 'quiz' || currentView === 'missoes') && (
+          <CentralRespeitoHub 
             onBack={() => handleNavigate('home')} 
+            initialTab={currentView === 'missoes' ? 'mapa' : 'quizzes'}
           />
         )}
 

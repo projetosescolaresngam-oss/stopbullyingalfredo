@@ -12,7 +12,7 @@ import {
 import { isSupabaseConfigured } from '../services/supabaseClient';
 import { playBreathTone } from '../services/audioSynthesizer';
 import { printElementById } from '../services/printService';
-import { ModalFotoCompleta } from './gestao/ModalFotoCompleta';
+import { ModalFotoCompleta } from './gestao/GestaoModals';
 import { useAutoScrollIntoView } from '../hooks/useAutoScrollIntoView';
 import { 
   ShieldCheck, 
@@ -22,6 +22,7 @@ import {
   Copy, 
   Check, 
   FileText, 
+  Building2, 
   Clock, 
   MapPin, 
   AlertTriangle, 
@@ -607,6 +608,23 @@ export const ProtocoloView: React.FC<ProtocoloViewProps> = ({
                     </span>
                   )}
                 </div>
+              </div>
+
+              {/* Unidade Escolar / Instituição de Ensino */}
+              <div className="p-4 rounded-2xl bg-gradient-to-r from-purple-50/70 to-indigo-50/50 border border-purple-200/80 space-y-1.5 sm:col-span-2 lg:col-span-1">
+                <div className="flex items-center gap-1.5 text-purple-700 text-xs font-bold uppercase tracking-wide">
+                  <Building2 className="w-3.5 h-3.5 text-purple-600" />
+                  <span>Unidade Escolar:</span>
+                </div>
+                <p className="text-xs font-bold text-purple-950">
+                  {denuncia.escola_nome || denuncia.escola_ocorrencia_nome || 'E.E.M.T.I. Alfredo Machado'}
+                </p>
+                {denuncia.turma_envolvida && (
+                  <p className="text-[11px] text-[#5c546d] flex items-center gap-1">
+                    <GraduationCap className="w-3 h-3 text-purple-500" />
+                    <span>Turma: <strong className="text-purple-900">{denuncia.turma_envolvida}</strong></span>
+                  </p>
+                )}
               </div>
 
               {/* Frequência & Recorrência */}

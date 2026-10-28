@@ -1,5 +1,5 @@
 import { useEffect, useRef, RefObject } from 'react';
-import { globalOverflowEnhancer } from '../utils/globalOverflowScrollEnhancer';
+import { globalOverflowEnhancer } from '../components/GlobalScrollEnhancer';
 
 export interface UseAutoScrollOptions {
   /** Se a rolagem automática deve ser disparada (padrão: true) */

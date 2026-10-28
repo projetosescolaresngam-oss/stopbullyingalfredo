@@ -12,6 +12,7 @@ import {
 import { INITIAL_DENUNCIAS } from '../data/initialData';
 import { getSupabase, isSupabaseConfigured } from './supabaseClient';
 import { getEscolaAtiva, getEscolas, syncEscolasFromSupabase } from './schoolService';
+import { getGestaoSessionToken } from './adminAuthService';
 
 const STORAGE_KEY_DENUNCIAS = 'stopbullying_denuncias_v2';
 const STORAGE_KEY_SOS = 'stopbullying_sos_v2';
@@ -83,22 +84,61 @@ export const isDenunciaDeleted = (id?: string, protocolo?: string): boolean => {
   return false;
 };
 
+export function normalizeDenunciaSchool(d: any): Denuncia {
+  if (!d) return d;
+  let escolaNome = d.escola_ocorrencia_nome || d.escola_nome;
+  let escolaId = d.escola_ocorrencia_id || d.escola_id;
+
+  // Se a escola não estiver definida ou for vazia, verifica se está embutida na descrição
+  if ((!escolaNome || escolaNome === 'Não informada / Desconhecida') && d.descricao) {
+    const match = d.descricao.match(/\[(?:Instituição de Ensino|Escola):\s*(.+?)\s*(?:\(ID:\s*([^\)]+)\))?\]/i);
+    if (match) {
+      escolaNome = match[1].trim();
+      if (match[2]) {
+        escolaId = match[2].trim();
+      }
+    }
+  }
+
+  // Fallback seguro se ainda não tiver nome de escola
+  if (!escolaNome) {
+    try {
+      const ativa = getEscolaAtiva();
+      escolaNome = ativa.nome;
+      escolaId = ativa.id;
+    } catch {
+      escolaNome = 'E.E.M.T.I. Alfredo Machado';
+      escolaId = 'escola-eemti-alfredo-machado';
+    }
+  }
+
+  return {
+    ...d,
+    escola_id: escolaId,
+    escola_nome: escolaNome,
+    escola_ocorrencia_id: escolaId,
+    escola_ocorrencia_nome: escolaNome,
+  };
+}
+
 export const filterActiveDenuncias = (denuncias: Denuncia[]): Denuncia[] => {
   if (!Array.isArray(denuncias)) return [];
   const { ids, protocolos } = getDeletedDenunciasRegistry();
   const mockProtocols = ['STP-94A1F', 'STP-88C2B', 'STP-71E9D', 'STP-63F4A', 'STP-SOS991'];
   const mockIds = ['1', '2', '3', '4', '5'];
 
-  return denuncias.filter(d => {
-    if (!d) return false;
-    if (d.status === 'Excluído' || (d.status as string) === 'Excluída' || d.is_deleted) return false;
-    if (d.id && (ids.has(d.id) || mockIds.includes(d.id))) return false;
-    if (d.protocolo) {
-      const clean = cleanProtocolKey(d.protocolo);
-      if (protocolos.has(clean) || mockProtocols.includes(d.protocolo)) return false;
-    }
-    return true;
-  });
+  return denuncias
+    .filter(d => {
+      if (!d) return false;
+      if (d.status === 'Excluído' || (d.status as string) === 'Excluída' || d.is_deleted) return false;
+      if (d.id && (ids.has(d.id) || mockIds.includes(d.id))) return false;
+      if (d.protocolo) {
+        const clean = cleanProtocolKey(d.protocolo);
+        if (protocolos.has(clean) || mockProtocols.includes(d.protocolo)) return false;
+      }
+      return true;
+    })
+    .map(normalizeDenunciaSchool);
 };
 
 // Purga completa e sincronizada na nuvem (Supabase)
@@ -109,7 +149,23 @@ export async function purgeDenunciaFromCloud(targetId?: string, targetProtocol?:
   const cleanProto = targetProtocol ? cleanProtocolKey(targetProtocol) : undefined;
 
   try {
-    // 1. Apagar mensagens de chat vinculadas
+    // 1. Tentar RPC autenticada no servidor com token de sessão
+    const sessionToken = getGestaoSessionToken();
+    if (sessionToken) {
+      const { error: rpcErr } = await supabase.rpc('gestao_excluir_denuncia', {
+        p_session_token: sessionToken,
+        p_denuncia_id: targetId || '',
+        p_protocolo: targetProtocol || ''
+      });
+
+      if (!rpcErr) {
+        return;
+      }
+    }
+  } catch {}
+
+  try {
+    // 2. Fallback de compatibilidade caso a RPC ainda não esteja no schema cache
     if (cleanProto) {
       await safeSupabaseExec(() => supabase.from('protocolo_mensagens').delete().eq('protocolo', cleanProto));
       await safeSupabaseExec(() => supabase.from('protocolo_mensagens').delete().eq('protocolo', `#${cleanProto}`));
@@ -121,25 +177,16 @@ export async function purgeDenunciaFromCloud(targetId?: string, targetProtocol?:
       await safeSupabaseExec(() => supabase.from('checkins_acompanhamento').delete().eq('denuncia_id', targetId));
     }
 
-    // 2. Atualizar status para 'Excluído' no banco (opera com garantia caso RLS restrinja DELETE)
     if (targetId) {
       await safeSupabaseExec(() => supabase.from('denuncias').update({ status: 'Excluído' }).eq('id', targetId));
-    }
-    if (targetProtocol) {
-      await safeSupabaseExec(() => supabase.from('denuncias').update({ status: 'Excluído' }).eq('protocolo', targetProtocol));
-    }
-    if (cleanProto && cleanProto !== targetProtocol) {
-      await safeSupabaseExec(() => supabase.from('denuncias').update({ status: 'Excluído' }).eq('protocolo', `#${cleanProto}`));
-    }
-
-    // 3. Tentar DELETE físico na tabela de denúncias
-    if (targetId) {
       await safeSupabaseExec(() => supabase.from('denuncias').delete().eq('id', targetId));
     }
     if (targetProtocol) {
+      await safeSupabaseExec(() => supabase.from('denuncias').update({ status: 'Excluído' }).eq('protocolo', targetProtocol));
       await safeSupabaseExec(() => supabase.from('denuncias').delete().eq('protocolo', targetProtocol));
     }
     if (cleanProto && cleanProto !== targetProtocol) {
+      await safeSupabaseExec(() => supabase.from('denuncias').update({ status: 'Excluído' }).eq('protocolo', `#${cleanProto}`));
       await safeSupabaseExec(() => supabase.from('denuncias').delete().eq('protocolo', `#${cleanProto}`));
     }
   } catch (err) {
@@ -181,17 +228,18 @@ function notifyStorageUpdated(): void {
 // na inicialização do site para visitantes públicos (preservação do sigilo dos relatos).
 // A listagem completa ocorre apenas sob demanda autenticada no Painel de Gestão Escolar.
 
-export async function syncFromSupabase(managementPassword?: string): Promise<void> {
+export async function syncFromSupabase(managementSessionToken?: string): Promise<void> {
   const supabase = getSupabase();
   if (!supabase) return;
 
   try {
     let dbDenuncias: any[] | null = null;
+    const sessionToken = managementSessionToken || getGestaoSessionToken();
 
-    // 1. Tentar via RPC autenticada da gestão se a senha for fornecida
-    if (managementPassword) {
+    // 1. Tentar via RPC autenticada da gestão se o token de sessão for fornecido
+    if (sessionToken) {
       const { data: rpcRes, error: rpcErr } = await supabase.rpc('gestao_autenticar_e_listar_denuncias', {
-        p_senha_gestao: managementPassword
+        p_session_token: sessionToken
       });
       if (!rpcErr && rpcRes && rpcRes.success && Array.isArray(rpcRes.denuncias)) {
         dbDenuncias = rpcRes.denuncias;
@@ -230,9 +278,9 @@ export async function syncFromSupabase(managementPassword?: string): Promise<voi
     }
 
     let dbSOS: any[] | null = null;
-    if (managementPassword) {
+    if (sessionToken) {
       const { data: rpcSos, error: rpcSosErr } = await supabase.rpc('gestao_listar_sos_alertas', {
-        p_senha_gestao: managementPassword
+        p_session_token: sessionToken
       });
       if (!rpcSosErr && rpcSos && rpcSos.success && Array.isArray(rpcSos.alertas)) {
         dbSOS = rpcSos.alertas;
@@ -344,10 +392,10 @@ export const saveDenuncia = (denuncia: Omit<Denuncia, 'id' | 'data_envio' | 'sta
   addLog('DENUNCIA_CRIADA', `Protocolo ${nova.protocolo} • ${nova.escola_nome}`);
   setLastCreatedProtocol(nova.protocolo);
 
-  // Sincronização com Supabase
+  // Sincronização com Supabase (Resiliente e adaptativa)
   const supabase = getSupabase();
   if (supabase) {
-    safeSupabaseExec(() => supabase.from('denuncias').insert({
+    const fullPayload: any = {
       id: nova.id,
       protocolo: nova.protocolo,
       tipo_violencia: nova.tipo_violencia,
@@ -384,7 +432,45 @@ export const saveDenuncia = (denuncia: Omit<Denuncia, 'id' | 'data_envio' | 'sta
       turma_acusado: nova.turma_acusado || null,
       turno_acusado: nova.turno_acusado || null,
       data_envio: nova.data_envio
-    }));
+    };
+
+    (async () => {
+      try {
+        const { error } = await supabase.from('denuncias').insert(fullPayload);
+        if (error) {
+          console.warn('[Supabase Insert Inicial Warning]', error.message);
+          // Se a coluna escola_id ainda não foi criada no banco remoto Supabase
+          if (error.code === 'PGRST204' || error.message?.includes('column')) {
+            const embeddedDesc = `[Instituição de Ensino: ${nova.escola_nome || 'E.E.M.T.I. Alfredo Machado'} (ID: ${nova.escola_id || 'escola-eemti-alfredo-machado'})]\n\n${nova.descricao}`;
+            const safePayload = {
+              id: nova.id,
+              protocolo: nova.protocolo,
+              tipo_violencia: nova.tipo_violencia,
+              local_escola: nova.local_escola,
+              descricao: embeddedDesc,
+              status: nova.status || 'Em Análise',
+              turno: nova.turno || 'Manhã',
+              frequencia: nova.frequencia || 'Poucas vezes',
+              papel_denunciante: nova.papel_denunciante || 'Sou a Vítima',
+              turma_envolvida: nova.turma_envolvida || null,
+              nivel_gravidade: nova.nivel_gravidade || 'Pendente',
+              nivel_escalada: nova.nivel_escalada || 'Média',
+              is_sos: Boolean(nova.is_sos),
+              tipos_selecionados: nova.tipos_selecionados || [],
+              data_envio: nova.data_envio
+            };
+            const retryRes = await supabase.from('denuncias').insert(safePayload);
+            if (!retryRes.error) {
+              console.log('[Supabase Safe Fallback Inserido]', nova.protocolo);
+            } else {
+              console.warn('[Supabase Safe Fallback Error]', retryRes.error.message);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[Supabase Insert Exception]', err);
+      }
+    })();
   }
 
   return nova;
@@ -428,7 +514,7 @@ export async function fetchDenunciaByProtocoloFromCloud(protocolo: string): Prom
     });
 
     if (!rpcErr && rpcData && rpcData.found && rpcData.denuncia) {
-      const item = rpcData.denuncia as Denuncia;
+      const item = normalizeDenunciaSchool(rpcData.denuncia as Denuncia);
       const currentList = getDenuncias();
       const exists = currentList.some(d => cleanProtocolKey(d.protocolo) === clean);
       if (!exists) {
@@ -449,7 +535,7 @@ export async function fetchDenunciaByProtocoloFromCloud(protocolo: string): Prom
       .limit(1);
 
     if (!error && Array.isArray(data) && data.length > 0) {
-      const item = data[0] as Denuncia;
+      const item = normalizeDenunciaSchool(data[0] as Denuncia);
       const currentList = getDenuncias();
       const exists = currentList.some(d => cleanProtocolKey(d.protocolo) === clean);
       if (!exists) {
@@ -612,7 +698,21 @@ export const updateDenunciaStatus = (id: string, newStatus: ComplaintStatus): De
 
   const supabase = getSupabase();
   if (supabase) {
-    safeSupabaseExec(() => supabase.from('denuncias').update({ status: newStatus }).eq('id', id));
+    (async () => {
+      try {
+        const sessionToken = getGestaoSessionToken();
+        const { error } = await supabase.rpc('gestao_atualizar_denuncia', {
+          p_session_token: sessionToken,
+          p_denuncia_id: id,
+          p_dados: { status: newStatus }
+        });
+        if (error) {
+          await safeSupabaseExec(() => supabase.from('denuncias').update({ status: newStatus }).eq('id', id));
+        }
+      } catch {
+        safeSupabaseExec(() => supabase.from('denuncias').update({ status: newStatus }).eq('id', id));
+      }
+    })();
   }
 
   return updated;
@@ -1033,12 +1133,33 @@ export const updateSOSAlertStatus = (
 
   const supabase = getSupabase();
   if (supabase) {
-    safeSupabaseExec(() => supabase.from('sos_alertas').update({
-      status,
-      atendido_por: atendidoPor || 'Coordenação de Plantão',
-      atendido_em: new Date().toISOString(),
-      notas_atendimento: notas
-    }).eq('id', id));
+    (async () => {
+      try {
+        const sessionToken = getGestaoSessionToken();
+        const { error } = await supabase.rpc('gestao_atualizar_sos', {
+          p_session_token: sessionToken,
+          p_sos_id: id,
+          p_status: status,
+          p_atendente: atendidoPor || 'Coordenação de Plantão',
+          p_notas: notas || ''
+        });
+        if (error) {
+          await safeSupabaseExec(() => supabase.from('sos_alertas').update({
+            status,
+            atendido_por: atendidoPor || 'Coordenação de Plantão',
+            atendido_em: new Date().toISOString(),
+            notas_atendimento: notas
+          }).eq('id', id));
+        }
+      } catch {
+        safeSupabaseExec(() => supabase.from('sos_alertas').update({
+          status,
+          atendido_por: atendidoPor || 'Coordenação de Plantão',
+          atendido_em: new Date().toISOString(),
+          notas_atendimento: notas
+        }).eq('id', id));
+      }
+    })();
   }
 
   return updated;

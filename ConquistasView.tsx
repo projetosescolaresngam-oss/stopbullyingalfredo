@@ -1,12 +1,11 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from './AppContext';
 import { AchievementBadgeFrame } from './AchievementBadgeFrame';
-import { AchievementInspectionModal } from './AchievementInspectionModal';
-import { ItemInspectionModal } from './ItemInspectionModal';
+import { AchievementInspectionModal, ItemInspectionModal } from './GamificationModals';
 import { MuseumGallery } from './components/museum/MuseumGallery';
 import { MuseumPieceModal } from './components/museum/MuseumPieceModal';
 import { COSMETICS_CATALOG } from './cosmeticsRewards';
-import { LEVEL_PROGRESSION_TABLE } from './levelProgression';
+import { LEVEL_PROGRESSION_TABLE } from './cosmeticsRewards';
 import { playBreathTone } from './services/audioSynthesizer';
 import { Achievement, AchievementCategory, CosmeticItem, ViewMode } from './types';
 import { useAutoScrollIntoView } from './hooks/useAutoScrollIntoView';

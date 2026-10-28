@@ -1,9 +1,11 @@
 import React from 'react';
 import { AchievementTier } from './types';
-import { BadgeDefs } from './badgeArt/badgeDefs';
-import { renderIllustrationPart1 } from './badgeArt/badgeIllustrations1';
-import { renderIllustrationPart2 } from './badgeArt/badgeIllustrations2';
-import { renderIllustrationPart3 } from './badgeArt/badgeIllustrations3';
+import { 
+  BadgeDefs, 
+  renderIllustrationPart1, 
+  renderIllustrationPart2, 
+  renderIllustrationPart3 
+} from './badgeArt';
 
 interface AchievementBadgeFrameProps {
   achievementId?: string;

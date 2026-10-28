@@ -3,8 +3,8 @@ import { CENTRAL_DESAFIOS, QuizChallenge, ChallengeDifficulty } from '../../data
 import { 
   ChallengeUserProgress, 
   checkIsChallengeUnlocked 
-} from '../../utils/centralRespeitoStorage';
-import { ChallengeModal } from './ChallengeModal';
+} from '../../utils';
+import { ChallengeModal } from './QuizModals';
 import { 
   Trophy, 
   Lock, 

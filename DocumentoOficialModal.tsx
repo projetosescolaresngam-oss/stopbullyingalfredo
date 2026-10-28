@@ -3,7 +3,7 @@ import { Denuncia, PerfilEscola } from '../../types';
 import { playBreathTone } from '../../services/audioSynthesizer';
 import { printElementById } from '../../services/printService';
 import { getEscolaAtiva, getEscolas, setEscolaAtiva } from '../../services/schoolService';
-import { ModalFotoCompleta } from './ModalFotoCompleta';
+import { ModalFotoCompleta } from './GestaoModals';
 import { useAutoScrollIntoView } from '../../hooks/useAutoScrollIntoView';
 import { 
   Printer, 

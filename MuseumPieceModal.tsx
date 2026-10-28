@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { Achievement } from '../../types';
 import { AchievementBadgeFrame } from '../../AchievementBadgeFrame';
-import { getMuseumPieceDetails } from './museumTypes';
+import { getMuseumPieceDetails } from './MuseumGallery';
 import { playBreathTone } from '../../services/audioSynthesizer';
 import { printElementById } from '../../services/printService';
 

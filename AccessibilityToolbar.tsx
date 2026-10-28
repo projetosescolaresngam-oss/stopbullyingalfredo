@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Sparkles,
   Type,
@@ -608,3 +608,229 @@ export const AccessibilityToolbar: React.FC = () => {
     </>
   );
 };
+
+export const ReadingRulerGuide: React.FC = () => {
+  const { preferences } = useAccessibility();
+  const [mouseY, setMouseY] = useState<number>(200);
+
+  useEffect(() => {
+    if (!preferences.readingRuler && !preferences.readingMask) return;
+
+    const handlePointerMove = (e: MouseEvent | TouchEvent) => {
+      let clientY = 0;
+      if ('touches' in e && e.touches.length > 0) {
+        clientY = e.touches[0].clientY;
+      } else if ('clientY' in e) {
+        clientY = (e as MouseEvent).clientY;
+      }
+      setMouseY(clientY);
+    };
+
+    window.addEventListener('mousemove', handlePointerMove, { passive: true });
+    window.addEventListener('touchmove', handlePointerMove, { passive: true });
+
+    return () => {
+      window.removeEventListener('mousemove', handlePointerMove);
+      window.removeEventListener('touchmove', handlePointerMove);
+    };
+  }, [preferences.readingRuler, preferences.readingMask]);
+
+  if (!preferences.readingRuler && !preferences.readingMask) {
+    return null;
+  }
+
+  if (preferences.readingMask) {
+    const bandHeight = 70;
+    const topHeight = Math.max(0, mouseY - bandHeight / 2);
+
+    return (
+      <div className="reading-mask-container pointer-events-none" aria-hidden="true">
+        <div 
+          className="accessibility-reading-mask-top" 
+          style={{ height: `${topHeight}px` }} 
+        />
+        <div 
+          className="accessibility-reading-mask-bottom" 
+          style={{ top: `${topHeight + bandHeight}px`, bottom: 0 }} 
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div 
+      className="accessibility-reading-ruler"
+      style={{ top: `${Math.max(0, mouseY - 16)}px` }}
+      aria-hidden="true"
+    />
+  );
+};
+
+export const SelectionSpeechReader: React.FC = () => {
+  const { speakText } = useAccessibility();
+  const [selectedText, setSelectedText] = useState('');
+  const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleSelectionChange = () => {
+      const selection = window.getSelection();
+      if (!selection || selection.isCollapsed) {
+        return;
+      }
+
+      const text = selection.toString().trim();
+      if (text.length >= 3) {
+        try {
+          const range = selection.getRangeAt(0);
+          const rect = range.getBoundingClientRect();
+          if (rect.width > 0 && rect.height > 0) {
+            setSelectedText(text);
+            setPosition({
+              x: Math.min(window.innerWidth - 170, Math.max(10, rect.left + rect.width / 2 - 75)),
+              y: Math.max(10, rect.top - 46 + window.scrollY)
+            });
+          }
+        } catch {
+          // fallback
+        }
+      }
+    };
+
+    const handlePointerDown = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setTimeout(() => {
+          const sel = window.getSelection();
+          if (!sel || sel.isCollapsed) {
+            setPosition(null);
+            setSelectedText('');
+          }
+        }, 150);
+      }
+    };
+
+    document.addEventListener('selectionchange', handleSelectionChange);
+    document.addEventListener('mousedown', handlePointerDown);
+
+    return () => {
+      document.removeEventListener('selectionchange', handleSelectionChange);
+      document.removeEventListener('mousedown', handlePointerDown);
+    };
+  }, []);
+
+  if (!position || !selectedText) return null;
+
+  return (
+    <div
+      ref={containerRef}
+      style={{
+        position: 'absolute',
+        left: `${position.x}px`,
+        top: `${position.y}px`,
+        zIndex: 99999
+      }}
+      className="animate-fadeIn"
+    >
+      <div className="flex items-center gap-1.5 bg-indigo-950/95 text-white px-3 py-1.5 rounded-full shadow-2xl border border-indigo-400/50 backdrop-blur-md text-xs font-bold ring-2 ring-indigo-500/20">
+        <button
+          type="button"
+          onClick={() => {
+            speakText(selectedText);
+            setPosition(null);
+            setSelectedText('');
+          }}
+          className="flex items-center gap-1.5 hover:text-amber-300 transition-colors cursor-pointer"
+          title="Ouvir o trecho de texto selecionado em voz alta"
+        >
+          <Volume2 className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+          <span>Ouvir trecho</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setPosition(null);
+            setSelectedText('');
+          }}
+          className="text-slate-400 hover:text-white p-0.5 ml-1 transition-colors cursor-pointer"
+          title="Fechar"
+        >
+          <X className="w-3 h-3" />
+        </button>
+      </div>
+    </div>
+  );
+};
+
+declare global {
+  interface Window {
+    VLibras?: {
+      Widget: new (url: string) => void;
+    };
+  }
+}
+
+export const VLibrasWidget: React.FC = () => {
+  const { preferences } = useAccessibility();
+  const [scriptLoaded, setScriptLoaded] = useState(false);
+
+  useEffect(() => {
+    if (!preferences.vlibrasActive) return;
+
+    if (document.getElementById('vlibras-script')) {
+      if (window.VLibras && !scriptLoaded) {
+        try {
+          new window.VLibras.Widget('https://vlibras.gov.br/app');
+          setScriptLoaded(true);
+        } catch (e) {
+          console.warn('[VLibras] Erro ao instanciar widget:', e);
+        }
+      }
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.id = 'vlibras-script';
+    script.src = 'https://vlibras.gov.br/app/vlibras-plugin.js';
+    script.async = true;
+
+    script.onload = () => {
+      if (window.VLibras) {
+        try {
+          new window.VLibras.Widget('https://vlibras.gov.br/app');
+          setScriptLoaded(true);
+        } catch (e) {
+          console.warn('[VLibras] Erro ao instanciar widget:', e);
+        }
+      }
+    };
+
+    document.body.appendChild(script);
+  }, [preferences.vlibrasActive, scriptLoaded]);
+
+  if (!preferences.vlibrasActive) return null;
+
+  return (
+    <div 
+      className="vlibras-container" 
+      aria-hidden="true"
+      style={{ zIndex: 99990, position: 'relative' }}
+    >
+      <div 
+        {...{ 'vw': 'true' }} 
+        className="enabled"
+      >
+        <div 
+          {...{ 'vw-access-button': 'true' }} 
+          className="active"
+        />
+        <div 
+          {...{ 'vw-plugin-wrapper': 'true' }}
+        >
+          <div className="vw-plugin-top-wrapper" />
+        </div>
+      </div>
+    </div>
+  );
+};
+

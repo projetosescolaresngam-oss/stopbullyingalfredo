@@ -1,4 +1,4 @@
-import { MissionDefinition } from '../types/missionTypes';
+import { MissionDefinition } from '../types';
 
 export const MISSIONS_CATALOG: MissionDefinition[] = [
   // =========================================================================

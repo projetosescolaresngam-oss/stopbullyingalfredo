@@ -107,12 +107,24 @@ export const DenunciaForm: React.FC<DenunciaFormProps> = ({
 
   // Carregamento e sincronização com banco de dados
   useEffect(() => {
+    const refreshList = (schools: PerfilEscola[]) => {
+      setEscolasCadastradas(schools);
+      const ativa = getEscolaAtiva();
+      setEscolaOcorrenciaId(currentId => {
+        if (!schools.some(e => e.id === currentId && e.ativa !== false)) {
+          setEscolaOcorrenciaNome(ativa.nome);
+          return ativa.id;
+        }
+        return currentId;
+      });
+    };
+
     syncEscolasFromSupabase().then(res => {
-      if (res && res.length > 0) setEscolasCadastradas(res);
+      if (res && res.length > 0) refreshList(res);
     }).catch(() => {});
 
     const updateEscolas = () => {
-      setEscolasCadastradas(getEscolas());
+      refreshList(getEscolas());
     };
     window.addEventListener('escola_ativa_updated', updateEscolas);
     window.addEventListener('storage', updateEscolas);
@@ -1104,6 +1116,7 @@ export const DenunciaForm: React.FC<DenunciaFormProps> = ({
                   className="w-full p-3.5 rounded-2xl bg-white border border-purple-300 font-bold text-sm text-[#241e33] focus:border-purple-600 focus:ring-2 focus:ring-purple-200 focus:outline-none transition-all shadow-xs cursor-pointer"
                 >
                   {escolasCadastradas
+                    .filter(e => e.ativa !== false)
                     .filter(e => !buscaEscolaOcorrencia.trim() || e.nome.toLowerCase().includes(buscaEscolaOcorrencia.toLowerCase()) || e.cidade.toLowerCase().includes(buscaEscolaOcorrencia.toLowerCase()))
                     .map((esc) => (
                       <option key={esc.id} value={esc.id}>

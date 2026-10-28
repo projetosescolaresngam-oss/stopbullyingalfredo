@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { QuizChallenge, QuizQuestion, ChallengeDifficulty } from '../../data/centralRespeitoData';
 import { speakText, playBreathTone } from '../../services/audioSynthesizer';
 import { useAutoScrollIntoView } from '../../hooks/useAutoScrollIntoView';
-import { AnswerRecord } from './QuizReviewModal';
+import { AnswerRecord } from './QuizModals';
 import { 
   ArrowLeft, 
   Volume2, 

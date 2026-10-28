@@ -17,8 +17,8 @@ import {
 } from '../services/storageService';
 import { playBreathTone } from '../services/audioSynthesizer';
 import { ModalMediacao } from './gestao/ModalMediacao';
-import { ModalEnvioEmail } from './gestao/ModalEnvioEmail';
-import { ModalRelatorioMensal } from './gestao/ModalRelatorioMensal';
+
+import { ModalEnvioEmail, ModalRelatorioMensal } from './gestao/GestaoModals';
 import { DocumentoOficialModal } from './gestao/DocumentoOficialModal';
 import { EstatisticasGestao } from './gestao/EstatisticasGestao';
 import { DiagnosticoBancoView } from './gestao/DiagnosticoBancoView';
@@ -72,24 +72,27 @@ import {
   Trash2,
   Megaphone
 } from 'lucide-react';
-import { getSemaforoInfo } from '../utils/semaforoUtils';
+import { getSemaforoInfo } from '../utils';
+import { 
+  loginGestao, 
+  logoutGestao, 
+  getGestaoSessionToken, 
+  getGestaoUserProfile, 
+  isGestaoAuthenticated, 
+  DEFAULT_GESTAO_USER,
+  GestaoUserProfile 
+} from '../services/adminAuthService';
 
 interface PainelGestaoProps {
   onBack: () => void;
 }
 
-const SENHA_GESTAO_MESTRA = '22112009';
-
 export const PainelGestao: React.FC<PainelGestaoProps> = ({ onBack }) => {
-  // 1. Estado de Autenticação com Senha
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    try {
-      return sessionStorage.getItem('painel_gestao_auth_v2') === 'true';
-    } catch {
-      return false;
-    }
-  });
+  // 1. Estado de Autenticação Segura com Sessão Criptografada
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => isGestaoAuthenticated());
+  const [usuarioInput, setUsuarioInput] = useState<string>(DEFAULT_GESTAO_USER);
   const [passwordInput, setPasswordInput] = useState('');
+  const [gestaoUser, setGestaoUser] = useState<GestaoUserProfile | null>(() => getGestaoUserProfile());
   const [showPassword, setShowPassword] = useState(false);
   const [authError, setAuthError] = useState('');
   const [isVerifying, setIsVerifying] = useState(false);
@@ -205,7 +208,8 @@ export const PainelGestao: React.FC<PainelGestaoProps> = ({ onBack }) => {
 
   useEffect(() => {
     if (isAuthenticated) {
-      syncFromSupabase(SENHA_GESTAO_MESTRA).then(() => loadDashboardData()).catch(() => loadDashboardData());
+      const sessionToken = getGestaoSessionToken();
+      syncFromSupabase(sessionToken).then(() => loadDashboardData()).catch(() => loadDashboardData());
       const handleStorageUpdate = () => {
         loadDashboardData();
       };
@@ -216,32 +220,34 @@ export const PainelGestao: React.FC<PainelGestaoProps> = ({ onBack }) => {
     }
   }, [isAuthenticated]);
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsVerifying(true);
     setAuthError('');
 
-    setTimeout(() => {
-      if (passwordInput.trim() === SENHA_GESTAO_MESTRA) {
+    try {
+      const res = await loginGestao(usuarioInput.trim(), passwordInput.trim());
+      if (res.success) {
         playSfx('success');
         setIsAuthenticated(true);
-        try {
-          sessionStorage.setItem('painel_gestao_auth_v2', 'true');
-        } catch {}
+        setGestaoUser(getGestaoUserProfile());
       } else {
         playSfx('alert');
-        setAuthError('Senha incorreta. Acesso restrito aos educadores e coordenação da EEMTI Alfredo Machado.');
+        setAuthError(res.message || 'Credenciais inválidas. Acesso restrito aos educadores e coordenação.');
       }
+    } catch {
+      playSfx('alert');
+      setAuthError('Falha de conexão com o serviço de autenticação.');
+    } finally {
       setIsVerifying(false);
-    }, 180);
+    }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     playSfx('lock');
+    await logoutGestao();
     setIsAuthenticated(false);
-    try {
-      sessionStorage.removeItem('painel_gestao_auth_v2');
-    } catch {}
+    setGestaoUser(null);
     setPasswordInput('');
   };
 
@@ -588,8 +594,26 @@ export const PainelGestao: React.FC<PainelGestaoProps> = ({ onBack }) => {
           <form onSubmit={handleLoginSubmit} className="space-y-4 pt-1 text-left">
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-[#241e33] flex items-center justify-between">
+                <span>Usuário Gestor:</span>
+                <span className="text-[10px] text-purple-700 font-semibold">Conta Institucional</span>
+              </label>
+              <input
+                type="text"
+                value={usuarioInput}
+                onChange={(e) => {
+                  setUsuarioInput(e.target.value);
+                  setAuthError('');
+                }}
+                placeholder="Ex: gestao.alfredomachado"
+                className="w-full px-4 py-3 rounded-2xl bg-purple-50/50 border border-purple-200 text-[#241e33] text-sm font-medium placeholder-[#786e8a] focus:outline-none focus:border-purple-600 focus:ring-2 focus:ring-purple-400/30 transition-all shadow-inner"
+                autoFocus
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-[#241e33] flex items-center justify-between">
                 <span>Senha de Acesso:</span>
-                <span className="text-[10px] text-purple-700 font-semibold">Coordenação &amp; Direção</span>
+                <span className="text-[10px] text-purple-700 font-semibold">Bcrypt / Pgcrypto</span>
               </label>
 
               <div className="relative">
@@ -600,9 +624,8 @@ export const PainelGestao: React.FC<PainelGestaoProps> = ({ onBack }) => {
                     setPasswordInput(e.target.value);
                     setAuthError('');
                   }}
-                  placeholder="Digite sua senha..."
-                  className="w-full pl-4 pr-11 py-3.5 rounded-2xl bg-purple-50/50 border border-purple-200 text-[#241e33] text-sm font-mono placeholder-[#786e8a] focus:outline-none focus:border-purple-600 focus:ring-2 focus:ring-purple-400/30 transition-all shadow-inner"
-                  autoFocus
+                  placeholder="Digite sua senha de gestão..."
+                  className="w-full pl-4 pr-11 py-3 rounded-2xl bg-purple-50/50 border border-purple-200 text-[#241e33] text-sm font-mono placeholder-[#786e8a] focus:outline-none focus:border-purple-600 focus:ring-2 focus:ring-purple-400/30 transition-all shadow-inner"
                 />
                 <button
                   type="button"
@@ -690,6 +713,10 @@ export const PainelGestao: React.FC<PainelGestaoProps> = ({ onBack }) => {
               <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[11px] font-bold">
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
                 Sessão Segura Ativa
+              </span>
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 text-[11px] font-bold">
+                <UserCheck className="w-3.5 h-3.5 text-indigo-400" />
+                {gestaoUser?.nome_completo || 'Coordenação Escolar'} ({gestaoUser?.cargo || 'Gestão'})
               </span>
               <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-purple-500/15 border border-purple-500/30 text-purple-300 text-[11px] font-bold" title="As denúncias operam sem vínculo com contas ou nicknames">
                 🔒 Anonimato Blindado: Contas Desvinculadas

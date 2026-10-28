@@ -3,7 +3,7 @@ import { useApp } from './AppContext';
 import { AvatarRenderer } from './AvatarRenderer';
 import { AchievementBadgeFrame } from './AchievementBadgeFrame';
 import { COSMETICS_CATALOG } from './cosmeticsRewards';
-import { LEVEL_PROGRESSION_TABLE } from './levelProgression';
+import { LEVEL_PROGRESSION_TABLE } from './cosmeticsRewards';
 import { Achievement, AchievementCategory, CosmeticCategory, CosmeticItem } from './types';
 import { useAutoScrollIntoView } from './hooks/useAutoScrollIntoView';
 import { 
@@ -12,7 +12,7 @@ import {
   claimDailyMissionReward,
   DailyMissionState 
 } from './services/quizProgressionService';
-import { SingleQuizPlayerModal } from './components/centralRespeito/SingleQuizPlayerModal';
+import { SingleQuizPlayerModal } from './components/centralRespeito/QuizModals';
 import { QuizItem, QUIZ_DIFFICULTY_LABELS } from './data/questionBank';
 import { 
   X, 

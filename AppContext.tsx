@@ -6,8 +6,8 @@ import {
   AnonymousStudentIdentity 
 } from './types';
 import { COSMETICS_CATALOG } from './cosmeticsRewards';
-import { INITIAL_ACHIEVEMENTS } from './achievementsData';
-import { calculateLevelFromXp, LEVEL_PROGRESSION_TABLE } from './levelProgression';
+import { INITIAL_ACHIEVEMENTS } from './data/initialData';
+import { calculateLevelFromXp, LEVEL_PROGRESSION_TABLE } from './cosmeticsRewards';
 import { 
   StudentAccount, 
   AccountGamificationSnapshot,
