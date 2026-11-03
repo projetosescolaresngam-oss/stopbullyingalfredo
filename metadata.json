@@ -1,0 +1,6 @@
+{
+  "name": "StopBullying — EEMTI Alfredo Machado",
+  "description": "Plataforma PWA para prevenção ao bullying, denúncias anônimas, triagem por semáforo, apoio emocional e SOS com GPS. Ceará Científico 2026.",
+  "requestFramePermissions": ["geolocation", "microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
