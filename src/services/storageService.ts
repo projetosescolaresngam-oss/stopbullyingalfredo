@@ -100,16 +100,10 @@ export function normalizeDenunciaSchool(d: any): Denuncia {
     }
   }
 
-  // Fallback seguro se ainda não tiver nome de escola
+  // Fallback seguro se ainda não tiver nome de escola (ancorado na escola polo original)
   if (!escolaNome) {
-    try {
-      const ativa = getEscolaAtiva();
-      escolaNome = ativa.nome;
-      escolaId = ativa.id;
-    } catch {
-      escolaNome = 'E.E.M.T.I. Alfredo Machado';
-      escolaId = 'escola-eemti-alfredo-machado';
-    }
+    escolaNome = 'E.E.M.T.I. Alfredo Machado';
+    escolaId = 'escola-eemti-alfredo-machado';
   }
 
   return {

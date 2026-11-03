@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Denuncia, 
   ComplaintStatus, 
@@ -23,7 +23,7 @@ import { DocumentoOficialModal } from './gestao/DocumentoOficialModal';
 import { EstatisticasGestao } from './gestao/EstatisticasGestao';
 import { DiagnosticoBancoView } from './gestao/DiagnosticoBancoView';
 import { PerfisEscolasTab } from './gestao/PerfisEscolasTab';
-import { getEscolaAtiva, getEscolas, syncEscolasFromSupabase } from '../services/schoolService';
+import { getEscolaAtiva, getEscolas, setEscolaAtiva, syncEscolasFromSupabase } from '../services/schoolService';
 import { PerfilEscola } from '../types';
 import { useAutoScrollIntoView } from '../hooks/useAutoScrollIntoView';
 import { 
@@ -103,7 +103,6 @@ export const PainelGestao: React.FC<PainelGestaoProps> = ({ onBack }) => {
   const [activeTab, setActiveTab] = useState<'denuncias' | 'sos' | 'estatisticas' | 'banco' | 'escolas'>('denuncias');
   const [escolaAtiva, setEscolaAtivaState] = useState<PerfilEscola>(getEscolaAtiva());
   const [escolasCadastradas, setEscolasCadastradas] = useState<PerfilEscola[]>(() => getEscolas());
-  const [selectedSchoolFilter, setSelectedSchoolFilter] = useState<string>('todas');
 
   useEffect(() => {
     const handleEscolaUpdate = () => {
@@ -354,20 +353,63 @@ export const PainelGestao: React.FC<PainelGestaoProps> = ({ onBack }) => {
     }
   };
 
-  // Cálculos operacionais
-  const pendentesSOS = denuncias.filter(d => d.is_sos && d.status !== 'Resolvido');
-  const sosAlertasUrgentes = sosAlerts.filter(s => s.status === 'URGENTE');
+  // Helper robusto para isolar ocorrências estritamente da escola ativa
+  const matchesEscolaAtiva = (itemSchoolId?: string, itemSchoolNome?: string): boolean => {
+    if (!escolaAtiva) return true;
+    const cleanItemNome = (itemSchoolNome || '').trim().toLowerCase();
+    const cleanAtivaNome = (escolaAtiva.nome || '').trim().toLowerCase();
+
+    // 1. Coincidência direta por ID
+    if (itemSchoolId && itemSchoolId === escolaAtiva.id) {
+      return true;
+    }
+
+    // 2. Coincidência direta por Nome (case-insensitive)
+    if (cleanItemNome && cleanAtivaNome && cleanItemNome === cleanAtivaNome) {
+      return true;
+    }
+
+    // 3. Casos legados sem identificação explícita de escola pertencem à escola polo fundadora
+    if (!itemSchoolId && !cleanItemNome) {
+      return escolaAtiva.id === 'escola-eemti-alfredo-machado' || escolaAtiva.sigla === 'EEMTI-AM';
+    }
+
+    return false;
+  };
+
+  // Ocorrências e alertas filtrados estritamente pela escola que está marcada como ativa
+  const denunciasEscolaAtiva = useMemo(() => {
+    return denuncias.filter(d => 
+      matchesEscolaAtiva(
+        d.escola_ocorrencia_id || d.escola_id,
+        d.escola_ocorrencia_nome || d.escola_nome
+      )
+    );
+  }, [denuncias, escolaAtiva]);
+
+  const sosAlertsEscolaAtiva = useMemo(() => {
+    return sosAlerts.filter(s => 
+      matchesEscolaAtiva(
+        s.escola_id,
+        s.escola_nome
+      )
+    );
+  }, [sosAlerts, escolaAtiva]);
+
+  // Cálculos operacionais estritamente sobre a escola ativa
+  const pendentesSOS = denunciasEscolaAtiva.filter(d => d.is_sos && d.status !== 'Resolvido');
+  const sosAlertasUrgentes = sosAlertsEscolaAtiva.filter(s => s.status === 'URGENTE');
   const totalCasosUrgentes = pendentesSOS.length + sosAlertasUrgentes.length;
 
-  const totalDenuncias = denuncias.length;
-  const casosEmAnalise = denuncias.filter(d => d.status === 'Em Análise').length;
-  const casosAcolhidos = denuncias.filter(d => d.status === 'Acolhido').length;
-  const casosResolvidos = denuncias.filter(d => d.status === 'Resolvido').length;
+  const totalDenuncias = denunciasEscolaAtiva.length;
+  const casosEmAnalise = denunciasEscolaAtiva.filter(d => d.status === 'Em Análise').length;
+  const casosAcolhidos = denunciasEscolaAtiva.filter(d => d.status === 'Acolhido').length;
+  const casosResolvidos = denunciasEscolaAtiva.filter(d => d.status === 'Resolvido').length;
   const percentResolvidos = totalDenuncias > 0 ? Math.round((casosResolvidos / totalDenuncias) * 100) : 0;
   const percentAcolhidos = totalDenuncias > 0 ? Math.round((casosAcolhidos / totalDenuncias) * 100) : 0;
   const percentEmAnalise = totalDenuncias > 0 ? Math.round((casosEmAnalise / totalDenuncias) * 100) : 0;
 
-  // Notificações estruturadas
+  // Notificações estruturadas estritamente da escola ativa
   const notificationsList = [
     ...pendentesSOS.map(d => ({
       id: `notif-sos-${d.id}`,
@@ -387,7 +429,7 @@ export const PainelGestao: React.FC<PainelGestaoProps> = ({ onBack }) => {
       casoId: undefined as string | undefined,
       urgente: true
     })),
-    ...denuncias.filter(d => !d.is_sos && d.status === 'Em Análise').map(d => ({
+    ...denunciasEscolaAtiva.filter(d => !d.is_sos && d.status === 'Em Análise').map(d => ({
       id: `notif-ana-${d.id}`,
       tipo: 'ANALISE',
       titulo: `Relato em Análise (${d.protocolo})`,
@@ -400,46 +442,46 @@ export const PainelGestao: React.FC<PainelGestaoProps> = ({ onBack }) => {
 
   const totalNotificacoes = notificationsList.length;
 
-  // Contadores dinâmicos para pílulas de filtros rápidos
-  const countFisico = denuncias.filter(d => {
+  // Contadores dinâmicos para pílulas de filtros rápidos da escola ativa
+  const countFisico = denunciasEscolaAtiva.filter(d => {
     const t = (d.tipo_violencia || '').toLowerCase();
     return t.includes('físic') || t.includes('fisic');
   }).length;
 
-  const countCyber = denuncias.filter(d => {
+  const countCyber = denunciasEscolaAtiva.filter(d => {
     const t = (d.tipo_violencia || '').toLowerCase();
     return t.includes('cyber') || t.includes('virtual');
   }).length;
 
-  const countVerbal = denuncias.filter(d => {
+  const countVerbal = denunciasEscolaAtiva.filter(d => {
     const t = (d.tipo_violencia || '').toLowerCase();
     return t.includes('verbal');
   }).length;
 
-  const countPsicologico = denuncias.filter(d => {
+  const countPsicologico = denunciasEscolaAtiva.filter(d => {
     const t = (d.tipo_violencia || '').toLowerCase();
     return t.includes('psicol');
   }).length;
 
-  const countSocial = denuncias.filter(d => {
+  const countSocial = denunciasEscolaAtiva.filter(d => {
     const t = (d.tipo_violencia || '').toLowerCase();
     return t.includes('social');
   }).length;
 
-  // Contadores por Semáforo Pedagógico de Urgência
-  const countSemaforoVermelho = denuncias.filter(d => getSemaforoInfo(d).nivel === 'vermelho').length;
-  const countSemaforoAmarelo = denuncias.filter(d => getSemaforoInfo(d).nivel === 'amarelo').length;
-  const countSemaforoVerde = denuncias.filter(d => getSemaforoInfo(d).nivel === 'verde').length;
+  // Contadores por Semáforo Pedagógico de Urgência da escola ativa
+  const countSemaforoVermelho = denunciasEscolaAtiva.filter(d => getSemaforoInfo(d).nivel === 'vermelho').length;
+  const countSemaforoAmarelo = denunciasEscolaAtiva.filter(d => getSemaforoInfo(d).nivel === 'amarelo').length;
+  const countSemaforoVerde = denunciasEscolaAtiva.filter(d => getSemaforoInfo(d).nivel === 'verde').length;
 
-  // Verificação de período cronológico com suporte a dados recentes e mock
+  // Verificação de período cronológico com suporte a dados da escola ativa
   const isDateInFilter = (dateStr: string, period: 'todas' | 'hoje' | '7dias' | '30dias' | 'mes') => {
     if (period === 'todas') return true;
     const date = new Date(dateStr);
     if (isNaN(date.getTime())) return true;
 
     const now = new Date();
-    // Encontrar data de referência mais recente para acomodar dados reais ou mock de demonstração
-    const timestamps = denuncias.map(d => new Date(d.data_envio).getTime()).filter(t => !isNaN(t));
+    // Encontrar data de referência mais recente para acomodar dados reais ou de demonstração
+    const timestamps = denunciasEscolaAtiva.map(d => new Date(d.data_envio).getTime()).filter(t => !isNaN(t));
     const maxDataMs = timestamps.length > 0 ? Math.max(...timestamps) : now.getTime();
     const refTime = Math.max(now.getTime(), maxDataMs);
 
@@ -469,7 +511,6 @@ export const PainelGestao: React.FC<PainelGestaoProps> = ({ onBack }) => {
     tipoFilter !== 'todos' ||
     urgenciaSemaforoFilter !== 'todos' ||
     dataPeriodFilter !== 'todas' ||
-    selectedSchoolFilter !== 'todas' ||
     dataSortOrder !== 'recentes' ||
     onlySOSFilter;
 
@@ -480,30 +521,13 @@ export const PainelGestao: React.FC<PainelGestaoProps> = ({ onBack }) => {
     setTipoFilter('todos');
     setUrgenciaSemaforoFilter('todos');
     setDataPeriodFilter('todas');
-    setSelectedSchoolFilter('todas');
     setDataSortOrder('recentes');
     setOnlySOSFilter(false);
     showToast('Todos os filtros foram redefinidos.');
   };
 
-  const filteredDenuncias = denuncias
+  const filteredDenuncias = denunciasEscolaAtiva
     .filter(d => {
-      // 0. Filtro Isolamento por Escola da Ocorrência
-      if (selectedSchoolFilter !== 'todas') {
-        const escId = d.escola_ocorrencia_id || d.escola_id;
-        const escNome = d.escola_ocorrencia_nome || d.escola_nome;
-        const targetEsc = escolasCadastradas.find(e => e.id === selectedSchoolFilter);
-
-        const matchId = escId === selectedSchoolFilter;
-        const matchNome = Boolean(
-          targetEsc && 
-          escNome && 
-          escNome.toLowerCase().trim() === targetEsc.nome.toLowerCase().trim()
-        );
-
-        if (!matchId && !matchNome) return false;
-      }
-
       // 1. Filtro Prioridade SOS
       if (onlySOSFilter && !d.is_sos) return false;
 
@@ -1194,7 +1218,23 @@ export const PainelGestao: React.FC<PainelGestaoProps> = ({ onBack }) => {
           {/* PAINEL COMPLETO DE FILTROS RÁPIDOS (DATA, TIPO DE BULLYING E SEMÁFORO) */}
           <div className="p-4 sm:p-5 rounded-3xl bg-[#0b1020]/95 border border-white/10 shadow-xl space-y-4">
             
-            {/* Linha Superior: Busca + Seleção de Escola + Ordenação + Limpar Filtros */}
+            {/* Aviso de Isolamento: Exibindo estritamente a escola marcada como ativa */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-3.5 py-2 rounded-2xl bg-indigo-950/40 border border-indigo-500/30 text-xs">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span className="text-slate-300 font-medium text-[11px]">
+                  Visualizando estritamente as ocorrências de:
+                </span>
+                <span className="text-white font-bold bg-indigo-600/30 px-2 py-0.5 rounded-lg border border-indigo-400/30 text-[11px]">
+                  🏫 {escolaAtiva.nome}
+                </span>
+              </div>
+              <span className="text-[10px] text-indigo-300 font-mono">
+                {denunciasEscolaAtiva.length} ocorrência(s) desta escola
+              </span>
+            </div>
+
+            {/* Linha Superior: Busca + Seleção de Escola Ativa + Ordenação + Limpar Filtros */}
             <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
               
               <div className="relative flex-1">
@@ -1217,24 +1257,27 @@ export const PainelGestao: React.FC<PainelGestaoProps> = ({ onBack }) => {
                 )}
               </div>
 
-              {/* Seletor Multi-Escola de Ocorrência */}
+              {/* Seletor da Escola Ativa */}
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-[#12182e] border border-indigo-500/30 text-xs">
                 <Building2 className="w-4 h-4 text-purple-400 flex-shrink-0" />
                 <span className="font-bold text-slate-300 text-[11px] whitespace-nowrap hidden sm:inline">
-                  Escola:
+                  Escola Ativa:
                 </span>
                 <select
-                  value={selectedSchoolFilter}
+                  value={escolaAtiva.id}
                   onChange={(e) => {
                     playSfx('click');
-                    setSelectedSchoolFilter(e.target.value);
+                    const targetId = e.target.value;
+                    const novaAtiva = setEscolaAtiva(targetId);
+                    setEscolaAtivaState(novaAtiva);
+                    showToast(`Escola ativa: ${novaAtiva.nome}. Exibindo apenas suas ocorrências.`);
                   }}
                   className="bg-black/60 border border-white/15 text-white font-bold text-xs rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-purple-400 cursor-pointer max-w-[220px] sm:max-w-[280px] truncate"
+                  title="Alterne a escola ativa para visualizar apenas as ocorrências e alertas dela"
                 >
-                  <option value="todas">🌐 Visão Geral (Todas as Escolas)</option>
                   {escolasCadastradas.map(esc => (
                     <option key={esc.id} value={esc.id}>
-                      🏫 {esc.nome}
+                      🏫 {esc.nome} {esc.id === escolaAtiva.id ? '★ (Ativa)' : ''}
                     </option>
                   ))}
                 </select>
@@ -1655,17 +1698,21 @@ export const PainelGestao: React.FC<PainelGestaoProps> = ({ onBack }) => {
                 <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 text-slate-400 flex items-center justify-center mx-auto">
                   <Search className="w-6 h-6" />
                 </div>
-                <h3 className="text-sm font-bold text-white">Nenhum relato corresponde aos filtros selecionados</h3>
+                <h3 className="text-sm font-bold text-white">Nenhuma ocorrência encontrada para {escolaAtiva.nome}</h3>
                 <p className="text-xs text-slate-400 max-w-sm mx-auto">
-                  Tente ajustar ou limpar os filtros de data, tipo de bullying ou semáforo de urgência.
+                  {denunciasEscolaAtiva.length === 0
+                    ? `A escola ${escolaAtiva.nome} ainda não possui relatos de ocorrências cadastrados no sistema.`
+                    : 'Nenhuma ocorrência desta escola corresponde aos filtros adicionais selecionados.'}
                 </p>
-                <button
-                  type="button"
-                  onClick={clearAllFilters}
-                  className="px-4 py-2 rounded-xl bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 text-xs font-bold transition-all cursor-pointer"
-                >
-                  Restaurar Todos os Filtros
-                </button>
+                {hasActiveFilters && (
+                  <button
+                    type="button"
+                    onClick={clearAllFilters}
+                    className="px-4 py-2 rounded-xl bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 text-xs font-bold transition-all cursor-pointer"
+                  >
+                    Restaurar Filtros de Busca
+                  </button>
+                )}
               </div>
             ) : (
               filteredDenuncias.map((caso) => {
@@ -1957,7 +2004,7 @@ export const PainelGestao: React.FC<PainelGestaoProps> = ({ onBack }) => {
                 Monitoramento de Socorro Imediato por GPS
               </span>
               <p className="text-xs text-slate-400 mt-0.5">
-                Registros emitidos pelos botões de pânico dos estudantes dentro do campus da EEMTI Alfredo Machado.
+                Registros emitidos pelos botões de pânico dos estudantes da escola ativa ({escolaAtiva.nome}).
               </p>
             </div>
 
@@ -1967,14 +2014,14 @@ export const PainelGestao: React.FC<PainelGestaoProps> = ({ onBack }) => {
           </div>
 
           <div className="space-y-3.5">
-            {sosAlerts.length === 0 ? (
+            {sosAlertsEscolaAtiva.length === 0 ? (
               <div className="p-12 rounded-3xl bg-[#0b1020]/90 border border-white/10 text-center text-xs text-slate-400 space-y-2">
                 <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto opacity-75" />
-                <p className="text-white font-bold text-sm">Nenhum alerta de socorro GPS registrado</p>
-                <p>O ambiente escolar encontra-se monitorado e em tranquilidade.</p>
+                <p className="text-white font-bold text-sm">Nenhum alerta de socorro GPS para {escolaAtiva.nome}</p>
+                <p>O ambiente desta escola encontra-se monitorado e em tranquilidade.</p>
               </div>
             ) : (
-              sosAlerts.map((sos) => (
+              sosAlertsEscolaAtiva.map((sos) => (
                 <div
                   key={sos.id}
                   className={`p-5 rounded-3xl border space-y-4 transition-all ${
@@ -2052,7 +2099,7 @@ export const PainelGestao: React.FC<PainelGestaoProps> = ({ onBack }) => {
       {/* ABA 3: DIAGNÓSTICO & INDICADORES ESCOLARES                                */}
       {/* ========================================================================= */}
       {activeTab === 'estatisticas' && (
-        <EstatisticasGestao denuncias={denuncias} />
+        <EstatisticasGestao denuncias={denunciasEscolaAtiva} />
       )}
 
       {/* ========================================================================= */}
