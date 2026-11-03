@@ -1035,7 +1035,16 @@ USING (false);
 
 REVOKE INSERT, UPDATE, DELETE ON public.perfis_escolas FROM anon, authenticated;
 
--- Seed Inicial das Escolas Modelo no Banco Supabase
+-- Limpeza de escolas fictícias/demonstração
+DELETE FROM public.perfis_escolas WHERE id IN (
+    'escola-eef-maria-do-carmo',
+    'escola-santos-dumont-quixada',
+    'escola-ifce-caninde',
+    'escola-colegio-contemporaneo',
+    'escola-colegio-agora-fortaleza'
+);
+
+-- Seed Oficial Exclusivo: E.E.M.T.I. Alfredo Machado (Escola Polo Real)
 INSERT INTO public.perfis_escolas (
     id, nome, sigla, codigo_inep, cidade, estado, rede,
     orgao_regional, conselho_tutelar_local, endereco, telefone,
@@ -1064,94 +1073,6 @@ INSERT INTO public.perfis_escolas (
     ARRAY['1º Ano A', '1º Ano B', '1º Ano C', '1º Ano D', '2º Ano A', '2º Ano B', '2º Ano C', '2º Ano D', '3º Ano A', '3º Ano B', '3º Ano C', '3º Ano D'],
     'estadual',
     'Escola de Ensino Médio em Tempo Integral referência em projetos de mediação e cultura de paz.'
-),
-(
-    'escola-eef-maria-do-carmo',
-    'E.E.F. Maria do Carmo Bezerra',
-    'EEF-MCB',
-    '23089124',
-    'Madalena',
-    'CE',
-    'Municipal',
-    'SME • SECRETARIA MUNICIPAL DE EDUCAÇÃO DE MADALENA',
-    'Conselho Tutelar de Madalena – CE',
-    'Av. Rodolfo Teófilo, 450 - Bairro São José, Madalena - CE',
-    '(88) 3442-5678',
-    'eef.mariadocarmo@madalena.ce.gov.br',
-    'conselhotutelar.madalena@ceara.gov.br',
-    'Prof. Raimundo Nonato Ferreira',
-    'Profª. Ana Cláudia Silveira',
-    'Núcleo de Cidadania & Acolhimento Estudantil',
-    false,
-    ARRAY['6º Ano A', '6º Ano B', '7º Ano A', '8º Ano A', '9º Ano A', '9º Ano B'],
-    'municipal',
-    'Escola de Ensino Fundamental da rede municipal com foco na transição dos anos finais.'
-),
-(
-    'escola-santos-dumont-quixada',
-    'Colégio Estadual Santos Dumont',
-    'CESD',
-    '23012984',
-    'Quixadá',
-    'CE',
-    'Estadual',
-    'SEDUC • CREDE 12 • QUIXADÁ – CE',
-    'Conselho Tutelar de Quixadá – CE',
-    'Rua José Jucá, 890 - Centro, Quixadá - CE',
-    '(88) 3412-4000',
-    'santosdumont@escola.ce.gov.br',
-    'conselhotutelar.quixada@ceara.gov.br',
-    'Profª. Elisabete Carvalho Gomes',
-    'Prof. Marcos Vinícius Lima',
-    'Comissão de Mediação Restaurativa Santos Dumont',
-    false,
-    ARRAY['1º Ano A', '1º Ano B', '2º Ano A', '2º Ano B', '3º Ano A', '3º Ano B'],
-    'estadual',
-    'Unidade escolar com tradição em projetos de protagonismo juvenil e tecnologia educacional.'
-),
-(
-    'escola-ifce-caninde',
-    'IFCE – Instituto Federal do Ceará (Campus Canindé)',
-    'IFCE-CAN',
-    '23249010',
-    'Canindé',
-    'CE',
-    'Federal',
-    'MEC • SETEC • REITORIA DO IFCE',
-    'Conselho Tutelar de Canindé – CE',
-    'Rodovia BR-020, Km 303 - Jubaia, Canindé - CE',
-    '(85) 3698-8900',
-    'gabinete.caninde@ifce.edu.br',
-    'conselhotutelar.caninde@ceara.gov.br',
-    'Prof. Dr. Marcelo Tavares',
-    'Profª. Ma. Cecília Albuquerque',
-    'Comissão Disciplinar e de Convivência Comunitária',
-    false,
-    ARRAY['Integrado - Informática 1º ao 3º', 'Integrado - Edificações 1º ao 3º', 'Integrado - Redes 1º ao 3º'],
-    'federal',
-    'Instituto Federal de Educação, Ciência e Tecnologia com oferta de ensino técnico e superior integrado.'
-),
-(
-    'escola-colegio-contemporaneo',
-    'Colégio Particular Contemporâneo',
-    'CPC',
-    '23198744',
-    'Fortaleza',
-    'CE',
-    'Privada',
-    'CONSELHO ESTADUAL DE EDUCAÇÃO • CEE/CE',
-    'Conselho Tutelar Regional de Fortaleza – CE',
-    'Rua Desembargador Moreira, 1200 - Aldeota, Fortaleza - CE',
-    '(85) 3224-5000',
-    'ouvidoria@contemporaneo.edu.br',
-    'conselhotutelar.fortaleza@ceara.gov.br',
-    'Dr. Fernando Albuquerque',
-    'Profª. Helena Sampaio',
-    'Núcleo de Inteligência Socioemocional e Diálogo',
-    false,
-    ARRAY['Fundamental II - 6º ao 9º', 'Ensino Médio - 1ª à 3ª Série'],
-    'personalizado',
-    'Instituição privada de ensino com metodologia ativa e programa permanente de convivência ética.'
 )
 ON CONFLICT (id) DO UPDATE SET
     nome = EXCLUDED.nome,
@@ -1168,11 +1089,7 @@ ON CONFLICT (id) DO UPDATE SET
     turmas_cadastradas = EXCLUDED.turmas_cadastradas,
     logo_tipo = EXCLUDED.logo_tipo,
     descricao = EXCLUDED.descricao,
-    updated_at = NOW();
-
-
-
--e 
+    updated_at = NOW(); 
 
 -- MIGRACAO DE SEGURANCA E AUDITORIA COMPLETA INTEGRAL
 

@@ -458,23 +458,33 @@ export const PerfisEscolasTab: React.FC<PerfisEscolasTabProps> = ({
         </div>
 
         {/* Linha com modelos prontos para importação rápida */}
+        {/* Linha de status de cadastro */}
         <div className="pt-2 border-t border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-400">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-bold text-slate-300 flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              Importar Modelo Rápido:
-            </span>
-            {MODELOS_ESCOLAS_EXEMPLO.map((mod, idx) => (
-              <button
-                key={idx}
-                type="button"
-                onClick={() => handleImportarModelo(idx)}
-                className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/15 text-slate-300 hover:text-white border border-white/10 text-[11px] font-semibold cursor-pointer transition-colors"
-                title={`Importar configuração pré-definida de ${mod.nome}`}
-              >
-                + {mod.sigla || mod.nome.substring(0, 12)} ({mod.rede})
-              </button>
-            ))}
+            {MODELOS_ESCOLAS_EXEMPLO.length > 0 ? (
+              <>
+                <span className="font-bold text-slate-300 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                  Importar Modelo:
+                </span>
+                {MODELOS_ESCOLAS_EXEMPLO.map((mod, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => handleImportarModelo(idx)}
+                    className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/15 text-slate-300 hover:text-white border border-white/10 text-[11px] font-semibold cursor-pointer transition-colors"
+                    title={`Importar configuração pré-definida de ${mod.nome}`}
+                  >
+                    + {mod.sigla || mod.nome.substring(0, 12)} ({mod.rede})
+                  </button>
+                ))}
+              </>
+            ) : (
+              <span className="text-slate-400 text-[11px] flex items-center gap-1.5">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                Cadastre suas escolas manualmente através do botão <strong>Cadastrar Nova Escola</strong> acima.
+              </span>
+            )}
           </div>
 
           <div className="flex items-center gap-2">

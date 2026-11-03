@@ -1400,6 +1400,26 @@ export const clearAllFictitiousData = async (): Promise<void> => {
   localStorage.setItem(STORAGE_KEY_SOS, JSON.stringify([]));
   localStorage.removeItem(STORAGE_KEY_PROTOCOL_CHATS);
   localStorage.removeItem(STORAGE_KEY_LAST_PROTOCOL);
+
+  // Remoção de qualquer escola fictícia residual do armazenamento
+  const FICTITIOUS_SCHOOL_IDS = [
+    'escola-eef-maria-do-carmo',
+    'escola-santos-dumont-quixada',
+    'escola-ifce-caninde',
+    'escola-colegio-agora-fortaleza',
+    'escola-colegio-contemporaneo'
+  ];
+  try {
+    const rawEsc = localStorage.getItem('stopbullying_perfis_escolas_v1');
+    if (rawEsc) {
+      const list = JSON.parse(rawEsc);
+      if (Array.isArray(list)) {
+        const cleaned = list.filter((e: any) => e && e.id && !FICTITIOUS_SCHOOL_IDS.includes(e.id));
+        localStorage.setItem('stopbullying_perfis_escolas_v1', JSON.stringify(cleaned));
+      }
+    }
+  } catch (_) {}
+
   addLog('DADOS_FICTICIOS_EXCLUIDOS', 'Remoção de todos os dados de simulação e inicialização limpa.');
   notifyStorageUpdated();
 
@@ -1408,6 +1428,10 @@ export const clearAllFictitiousData = async (): Promise<void> => {
     const mockProtocols = ['STP-94A1F', 'STP-88C2B', 'STP-71E9D', 'STP-63F4A', 'STP-SOS991'];
     for (const proto of mockProtocols) {
       await safeSupabaseExec(() => supabase.from('denuncias').delete().eq('protocolo', proto));
+    }
+    // Remove também escolas fictícias do banco remoto se existirem
+    for (const escId of FICTITIOUS_SCHOOL_IDS) {
+      await safeSupabaseExec(() => supabase.from('perfis_escolas').delete().eq('id', escId));
     }
   }
 };
