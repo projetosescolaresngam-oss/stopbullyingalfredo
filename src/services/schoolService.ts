@@ -10,7 +10,7 @@
 
 import { PerfilEscola, CombinacaoTurma } from '../types';
 import { getSupabase, isSupabaseConfigured } from './supabaseClient';
-import { getGestaoSessionToken } from './adminAuthService';
+import { getGestaoSessionToken, ensureGestaoServerSession } from './adminAuthService';
 
 const STORAGE_KEY_ESCOLAS = 'stopbullying_perfis_escolas_v1';
 const STORAGE_KEY_ATIVA_ID = 'stopbullying_escola_ativa_id_v1';
@@ -345,7 +345,10 @@ export const salvarEscola = (
 
     (async () => {
       try {
-        const sessionToken = getGestaoSessionToken();
+        let sessionToken = getGestaoSessionToken();
+        if (!sessionToken) {
+          sessionToken = await ensureGestaoServerSession();
+        }
         // 1. Prioriza RPC de gestão com validação de sessão segura no PostgreSQL
         const { data: rpcData, error: rpcError } = await supabase.rpc('gestao_salvar_escola', {
           p_session_token: sessionToken,
@@ -353,8 +356,11 @@ export const salvarEscola = (
         });
 
         if (rpcError) {
+          console.warn('[Supabase Sync Escola RPC Warn]', rpcError.message);
           // 2. Fallback de compatibilidade se a RPC ainda não tiver sido criada no banco
           await supabase.from('perfis_escolas').upsert(escolaPayload);
+        } else {
+          console.log('[Supabase Escola Sincronizada]', escolaAtualizada.nome);
         }
       } catch (err) {
         console.warn('[Supabase Sync Escola Warn]', err);
@@ -382,7 +388,10 @@ export const excluirEscola = (escolaId: string): boolean => {
   if (supabase && isSupabaseConfigured()) {
     (async () => {
       try {
-        const sessionToken = getGestaoSessionToken();
+        let sessionToken = getGestaoSessionToken();
+        if (!sessionToken) {
+          sessionToken = await ensureGestaoServerSession();
+        }
         const { error: rpcError } = await supabase.rpc('gestao_excluir_escola', {
           p_session_token: sessionToken,
           p_escola_id: escolaId

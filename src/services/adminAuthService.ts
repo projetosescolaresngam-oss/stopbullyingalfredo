@@ -57,6 +57,23 @@ export const isGestaoAuthenticated = (): boolean => {
   return Boolean(token && token.length >= 16);
 };
 
+export const ensureGestaoServerSession = async (): Promise<string | null> => {
+  const currentToken = getGestaoSessionToken();
+  const supabase = getSupabase();
+  if (!supabase || !isSupabaseConfigured()) return currentToken;
+
+  if (currentToken && currentToken.length >= 16) {
+    try {
+      const { data: isValid } = await supabase.rpc('validar_sessao_gestao', { p_token: currentToken });
+      if (isValid === true) {
+        return currentToken;
+      }
+    } catch {}
+  }
+
+  return currentToken;
+};
+
 export const loginGestao = async (
   usuario: string, 
   senha: string

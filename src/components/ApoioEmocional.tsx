@@ -14,12 +14,14 @@ import {
   ShieldCheck, 
   ExternalLink 
 } from 'lucide-react';
+import { useApp } from '../AppContext';
 
 interface ApoioEmocionalProps {
   onBack: () => void;
 }
 
 export const ApoioEmocional: React.FC<ApoioEmocionalProps> = ({ onBack }) => {
+  const { recordBreathingCompleted } = useApp();
   // Breathing state: 0 = Idle, 1 = Inhale (4s), 2 = Hold (7s), 3 = Exhale (8s)
   const [breathPhase, setBreathPhase] = useState<0 | 1 | 2 | 3>(0);
   const [breathSeconds, setBreathSeconds] = useState(0);
@@ -69,7 +71,8 @@ export const ApoioEmocional: React.FC<ApoioEmocionalProps> = ({ onBack }) => {
             setBreathSeconds(8);
             return 3;
           } else {
-            // After Exhale (8s) -> Inhale (4s)
+            // After Exhale (8s) -> Inhale (4s) (Ciclo completo 4-7-8)
+            recordBreathingCompleted();
             playBreathTone(440, 2000, breathSound); // A4
             setBreathSeconds(4);
             return 1;

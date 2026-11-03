@@ -1817,3 +1817,19 @@ GRANT EXECUTE ON FUNCTION public.gestao_excluir_escola TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.gestao_atualizar_denuncia TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.gestao_excluir_denuncia TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.gestao_atualizar_sos TO anon, authenticated;
+
+-- ============================================================================
+-- 14. CONCESSÕES EXPLÍCITAS DE TABELAS PARA ENVIO E REGISTRO DE DADOS
+-- ============================================================================
+GRANT SELECT, INSERT ON public.denuncias TO anon, authenticated;
+GRANT SELECT, INSERT ON public.sos_alertas TO anon, authenticated;
+GRANT SELECT, INSERT ON public.protocolo_mensagens TO anon, authenticated;
+GRANT ALL ON public.mediacoes_acoes TO anon, authenticated;
+GRANT ALL ON public.termos_acordo_convivencia TO anon, authenticated;
+GRANT ALL ON public.checkins_acompanhamento TO anon, authenticated;
+GRANT ALL ON public.estudantes_gamificacao TO anon, authenticated;
+GRANT ALL ON public.triagens_avaliacoes TO anon, authenticated;
+GRANT ALL ON public.diario_emocional_registros TO anon, authenticated;
+GRANT ALL ON public.quiz_tentativas TO anon, authenticated;
+GRANT ALL ON public.auditoria_logs TO anon, authenticated;
+GRANT SELECT ON public.perfis_escolas TO anon, authenticated;

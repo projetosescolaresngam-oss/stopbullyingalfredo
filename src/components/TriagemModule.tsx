@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ViewMode } from '../types';
 import { useAutoScrollIntoView } from '../hooks/useAutoScrollIntoView';
+import { saveTriagemAsync } from '../services/storageService';
 import { 
   TrafficCone, 
   ArrowLeft, 
@@ -21,6 +22,19 @@ interface TriagemModuleProps {
 export const TriagemModule: React.FC<TriagemModuleProps> = ({ onBack, onNavigate }) => {
   const [selectedLevel, setSelectedLevel] = useState<'verde' | 'amarelo' | 'vermelho' | null>(null);
   const resultCardRef = useAutoScrollIntoView({ active: !!selectedLevel, delay: 100 });
+
+  const handleSelectLevel = (level: 'verde' | 'amarelo' | 'vermelho') => {
+    setSelectedLevel(level);
+    saveTriagemAsync({
+      nivel_risco: level === 'vermelho' ? 'Grave / Risco Físico' : level === 'amarelo' ? 'Caso Recorrente / Sistemático' : 'Caso Leve / Conflito Pontual',
+      score_total: level === 'vermelho' ? 3 : level === 'amarelo' ? 2 : 1,
+      orientacao_recomendada: level === 'vermelho' 
+        ? 'Acionamento Imediato / Direção, SOS e Conselho Tutelar' 
+        : level === 'amarelo' 
+        ? 'Registro Formal de Denúncia Anônima com Mediação Restaurativa' 
+        : 'Acolhimento e Diálogo Restaurativo Preventivo'
+    });
+  };
 
   return (
     <div className="max-w-3xl mx-auto space-y-6 animate-fadeIn text-[#241e33]">
@@ -55,7 +69,7 @@ export const TriagemModule: React.FC<TriagemModuleProps> = ({ onBack, onNavigate
         
         {/* Green */}
         <div
-          onClick={() => setSelectedLevel('verde')}
+          onClick={() => handleSelectLevel('verde')}
           className={`p-5 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between shadow-sm hover:shadow-md ${
             selectedLevel === 'verde'
               ? 'bg-emerald-50 border-emerald-400 ring-2 ring-emerald-400 shadow-emerald-900/10'
@@ -81,7 +95,7 @@ export const TriagemModule: React.FC<TriagemModuleProps> = ({ onBack, onNavigate
 
         {/* Yellow */}
         <div
-          onClick={() => setSelectedLevel('amarelo')}
+          onClick={() => handleSelectLevel('amarelo')}
           className={`p-5 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between shadow-sm hover:shadow-md ${
             selectedLevel === 'amarelo'
               ? 'bg-amber-50 border-amber-400 ring-2 ring-amber-400 shadow-amber-900/10'
@@ -107,7 +121,7 @@ export const TriagemModule: React.FC<TriagemModuleProps> = ({ onBack, onNavigate
 
         {/* Red */}
         <div
-          onClick={() => setSelectedLevel('vermelho')}
+          onClick={() => handleSelectLevel('vermelho')}
           className={`p-5 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between shadow-sm hover:shadow-md ${
             selectedLevel === 'vermelho'
               ? 'bg-rose-50 border-rose-400 ring-2 ring-rose-400 shadow-rose-900/10'

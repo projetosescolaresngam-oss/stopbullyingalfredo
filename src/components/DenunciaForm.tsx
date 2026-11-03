@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Denuncia, ViolenceType, SchoolLocation, PerfilEscola } from '../types';
-import { saveDenuncia } from '../services/storageService';
+import { saveDenuncia, saveDenunciaAsync } from '../services/storageService';
 import { 
   getEscolaAtiva, 
   getEscolas, 
@@ -392,7 +392,7 @@ export const DenunciaForm: React.FC<DenunciaFormProps> = ({
   };
 
   // Enviar Denúncia
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!agressorGrupo.trim()) {
@@ -426,7 +426,7 @@ export const DenunciaForm: React.FC<DenunciaFormProps> = ({
       }
     }
 
-    const novaDenuncia = saveDenuncia({
+    const novaDenuncia = await saveDenunciaAsync({
       protocolo: protocolCode,
       tipo_violencia: tiposSelecionados.length > 0 ? tiposSelecionados.join(', ') : 'Geral',
       local_escola: local,

@@ -470,6 +470,82 @@ export const saveDenuncia = (denuncia: Omit<Denuncia, 'id' | 'data_envio' | 'sta
   return nova;
 };
 
+export const saveDenunciaAsync = async (
+  denuncia: Omit<Denuncia, 'id' | 'data_envio' | 'status'> & { id?: string }
+): Promise<Denuncia> => {
+  const nova = saveDenuncia(denuncia);
+  const supabase = getSupabase();
+  if (supabase) {
+    try {
+      const fullPayload: any = {
+        id: nova.id,
+        protocolo: nova.protocolo,
+        tipo_violencia: nova.tipo_violencia,
+        tipos_selecionados: nova.tipos_selecionados || [],
+        local_escola: nova.local_escola,
+        turno: nova.turno || 'Manhã',
+        frequencia: nova.frequencia || 'Poucas vezes',
+        papel_denunciante: nova.papel_denunciante || 'Sou a Vítima',
+        turma_envolvida: nova.turma_envolvida || null,
+        agressor_grupo: nova.agressor_grupo || null,
+        descricao: nova.descricao,
+        link_cyberbullying: nova.link_cyberbullying || null,
+        midia_anexa: nova.midia_anexa || null,
+        midia_tipo: nova.midia_tipo || null,
+        midia_duracao: nova.midia_duracao || 0,
+        provas_anexas: nova.provas_anexas || [],
+        nivel_gravidade: nova.nivel_gravidade || 'Pendente',
+        nivel_escalada: nova.nivel_escalada || 'Média',
+        is_sos: Boolean(nova.is_sos),
+        status: nova.status,
+        etapa_mediacao: nova.etapa_mediacao || 'escuta_inicial',
+        impactos_identificados: nova.impactos_identificados || [],
+        medidas_protecao: nova.medidas_protecao || [],
+        escola_id: nova.escola_id || null,
+        escola_nome: nova.escola_nome || null,
+        escola_ocorrencia_id: nova.escola_ocorrencia_id || null,
+        escola_ocorrencia_nome: nova.escola_ocorrencia_nome || null,
+        serie_ocorrencia: nova.serie_ocorrencia || null,
+        turma_ocorrencia: nova.turma_ocorrencia || null,
+        turno_ocorrencia: nova.turno_ocorrencia || null,
+        escola_acusado_id: nova.escola_acusado_id || null,
+        escola_acusado_nome: nova.escola_acusado_nome || null,
+        serie_acusado: nova.serie_acusado || null,
+        turma_acusado: nova.turma_acusado || null,
+        turno_acusado: nova.turno_acusado || null,
+        data_envio: nova.data_envio
+      };
+
+      const { error } = await supabase.from('denuncias').insert(fullPayload);
+      if (error) {
+        console.warn('[Supabase Insert Inicial Warning]', error.message);
+        const embeddedDesc = `[Instituição de Ensino: ${nova.escola_nome || 'E.E.M.T.I. Alfredo Machado'} (ID: ${nova.escola_id || 'escola-eemti-alfredo-machado'})]\n\n${nova.descricao}`;
+        const safePayload = {
+          id: nova.id,
+          protocolo: nova.protocolo,
+          tipo_violencia: nova.tipo_violencia,
+          local_escola: nova.local_escola,
+          descricao: embeddedDesc,
+          status: nova.status || 'Em Análise',
+          turno: nova.turno || 'Manhã',
+          frequencia: nova.frequencia || 'Poucas vezes',
+          papel_denunciante: nova.papel_denunciante || 'Sou a Vítima',
+          turma_envolvida: nova.turma_envolvida || null,
+          nivel_gravidade: nova.nivel_gravidade || 'Pendente',
+          nivel_escalada: nova.nivel_escalada || 'Média',
+          is_sos: Boolean(nova.is_sos),
+          tipos_selecionados: nova.tipos_selecionados || [],
+          data_envio: nova.data_envio
+        };
+        await supabase.from('denuncias').insert(safePayload);
+      }
+    } catch (err) {
+      console.warn('[Supabase saveDenunciaAsync Exception]', err);
+    }
+  }
+  return nova;
+};
+
 export const setLastCreatedProtocol = (protocolo: string) => {
   try {
     localStorage.setItem(STORAGE_KEY_LAST_PROTOCOL, protocolo.trim());
@@ -751,6 +827,151 @@ export const saveSOSAlert = (alertData: Omit<SOSAlert, 'id' | 'data_disparo' | '
   }
 
   return novo;
+};
+
+export const saveSOSAlertAsync = async (
+  alertData: Omit<SOSAlert, 'id' | 'data_disparo' | 'status'>
+): Promise<SOSAlert> => {
+  const novo = saveSOSAlert(alertData);
+  const supabase = getSupabase();
+  if (supabase) {
+    try {
+      const { error } = await supabase.from('sos_alertas').insert({
+        id: novo.id,
+        latitude: novo.latitude,
+        longitude: novo.longitude,
+        precisao_metros: novo.precisao_metros,
+        dispositivo_info: novo.dispositivo_info,
+        local_aproximado: novo.local_aproximado,
+        status: novo.status,
+        escola_id: novo.escola_id || null,
+        escola_nome: novo.escola_nome || null,
+        data_disparo: novo.data_disparo
+      });
+      if (error && (error.code === 'PGRST204' || error.message?.includes('column'))) {
+        await supabase.from('sos_alertas').insert({
+          id: novo.id,
+          latitude: novo.latitude,
+          longitude: novo.longitude,
+          precisao_metros: novo.precisao_metros,
+          dispositivo_info: novo.dispositivo_info,
+          local_aproximado: novo.local_aproximado,
+          status: novo.status,
+          data_disparo: novo.data_disparo
+        });
+      }
+    } catch (err) {
+      console.warn('[Supabase saveSOSAlertAsync Warn]', err);
+    }
+  }
+  return novo;
+};
+
+export interface TriagemData {
+  student_seed?: string;
+  nivel_risco: string;
+  score_total?: number;
+  respostas?: Record<string, any>;
+  orientacao_recomendada?: string;
+}
+
+export const saveTriagemAsync = async (data: TriagemData): Promise<void> => {
+  addLog('TRIAGEM_CONCLUIDA', `Nível: ${data.nivel_risco} • Score: ${data.score_total || 0}`);
+  const supabase = getSupabase();
+  if (supabase) {
+    try {
+      await supabase.from('triagens_avaliacoes').insert({
+        id: generateUUID(),
+        student_seed: data.student_seed || null,
+        nivel_risco: data.nivel_risco,
+        score_total: data.score_total || 0,
+        respostas: data.respostas || {},
+        orientacao_recomendada: data.orientacao_recomendada || null
+      });
+    } catch (err) {
+      console.warn('[Supabase saveTriagemAsync Warn]', err);
+    }
+  }
+};
+
+export interface DiarioEmocionalData {
+  student_seed?: string;
+  emocao: string;
+  intensidade?: number;
+  gatilho?: string;
+  fez_respiracao_478?: boolean;
+}
+
+export const saveDiarioEmocionalAsync = async (data: DiarioEmocionalData): Promise<void> => {
+  addLog('DIARIO_EMOCIONAL', `Emoção: ${data.emocao} • Respiração 4-7-8: ${data.fez_respiracao_478 ? 'Sim' : 'Não'}`);
+  const supabase = getSupabase();
+  if (supabase) {
+    try {
+      await supabase.from('diario_emocional_registros').insert({
+        id: generateUUID(),
+        student_seed: data.student_seed || null,
+        emocao: data.emocao,
+        intensidade: data.intensidade || 3,
+        gatilho: data.gatilho || null,
+        fez_respiracao_478: Boolean(data.fez_respiracao_478)
+      });
+    } catch (err) {
+      console.warn('[Supabase saveDiarioEmocionalAsync Warn]', err);
+    }
+  }
+};
+
+export interface QuizTentativaData {
+  student_seed?: string;
+  score_percent: number;
+  total_questions: number;
+  correct_answers: number;
+}
+
+export const saveQuizTentativaAsync = async (data: QuizTentativaData): Promise<void> => {
+  addLog('QUIZ_CONCLUIDO', `Score: ${data.score_percent}% (${data.correct_answers}/${data.total_questions})`);
+  const supabase = getSupabase();
+  if (supabase) {
+    try {
+      await supabase.from('quiz_tentativas').insert({
+        id: generateUUID(),
+        student_seed: data.student_seed || null,
+        score_percent: data.score_percent,
+        total_questions: data.total_questions,
+        correct_answers: data.correct_answers
+      });
+    } catch (err) {
+      console.warn('[Supabase saveQuizTentativaAsync Warn]', err);
+    }
+  }
+};
+
+export const syncStudentGamificationAsync = async (profile: any): Promise<void> => {
+  if (!profile || !profile.studentSeed) return;
+  const supabase = getSupabase();
+  if (supabase) {
+    try {
+      await supabase.from('estudantes_gamificacao').upsert({
+        student_seed: profile.studentSeed,
+        student_code: profile.studentCode || '',
+        current_level: profile.currentLevel || 1,
+        current_xp: profile.currentXp || 0,
+        next_level_xp: profile.nextLevelXp || 100,
+        level_title: profile.levelTitle || 'Stop Aprendiz',
+        equipped_icon_id: profile.equippedIconId || 'icon_anonimo_padrao',
+        equipped_frame_id: profile.equippedFrameId || 'frame_leao_dourado_supremo',
+        equipped_badge_id: profile.equippedBadgeId || 'badge_estrela_bronze',
+        equipped_title_id: profile.equippedTitleId || 'title_sentinela_aprendiz',
+        equipped_effect_id: profile.equippedEffectId || 'effect_nenhum',
+        unlocked_cosmetics: profile.unlockedCosmetics || [],
+        unlocked_achievements: profile.unlockedAchievements || [],
+        stats: profile.stats || {},
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'student_seed' });
+    } catch (err) {
+      console.warn('[Supabase syncStudentGamificationAsync Warn]', err);
+    }
+  }
 };
 
 export const addLog = (type: string, detail: string) => {

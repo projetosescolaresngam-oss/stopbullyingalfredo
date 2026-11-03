@@ -18,6 +18,11 @@ import {
   syncAccountSnapshot,
   logoutAccount as serviceLogout
 } from './services/accountService';
+import { 
+  saveQuizTentativaAsync, 
+  saveDiarioEmocionalAsync, 
+  syncStudentGamificationAsync 
+} from './services/storageService';
 
 interface UserProgressStats {
   viewedLaws: boolean;
@@ -204,12 +209,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [latestUnlockedAchievement, setLatestUnlockedAchievement] = useState<Achievement | null>(null);
   const [latestUnlockedReward, setLatestUnlockedReward] = useState<CosmeticItem | null>(null);
 
-  // Sync profile to localStorage
+  // Sync profile to localStorage and Supabase
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY_PROFILE, JSON.stringify(userProfile));
+      syncStudentGamificationAsync({
+        studentSeed: studentIdentity?.studentSeed,
+        studentCode: studentIdentity?.code,
+        currentLevel: userProfile.currentLevel,
+        currentXp: userProfile.currentXp,
+        nextLevelXp: userProfile.nextLevelXp,
+        levelTitle: userProfile.levelTitle,
+        equippedIconId: userProfile.equippedIconId,
+        equippedFrameId: userProfile.equippedFrameId,
+        equippedBadgeId: userProfile.equippedBadgeId,
+        equippedTitleId: userProfile.equippedTitleId,
+        equippedEffectId: userProfile.equippedEffectId,
+        unlockedCosmetics: userProfile.unlockedCosmetics,
+        unlockedAchievements: achievements.filter(a => a.isUnlocked).map(a => a.id),
+        stats: userStats
+      });
     } catch {}
-  }, [userProfile]);
+  }, [userProfile, userStats, achievements, studentIdentity]);
 
   // Sync stats to localStorage
   useEffect(() => {
@@ -570,6 +591,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const recordQuizCompleted = (scorePercent: number, totalQuestions: number) => {
+    saveQuizTentativaAsync({
+      student_seed: studentIdentity?.studentSeed,
+      score_percent: scorePercent,
+      total_questions: totalQuestions,
+      correct_answers: Math.round((scorePercent / 100) * totalQuestions)
+    });
+
     setUserStats(prev => {
       const isPerfect = scorePercent === 100;
       const updated: UserProgressStats = {
@@ -587,6 +615,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const recordBreathingCompleted = () => {
+    saveDiarioEmocionalAsync({
+      student_seed: studentIdentity?.studentSeed,
+      emocao: 'Tranquilidade e Auto-regulação',
+      intensidade: 4,
+      gatilho: 'Exercício Guiado de Respiração 4-7-8',
+      fez_respiracao_478: true
+    });
+
     setUserStats(prev => {
       const updated = {
         ...prev,

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { saveSOSAlert } from '../services/storageService';
+import { saveSOSAlertAsync } from '../services/storageService';
+import { getEscolaAtiva } from '../services/schoolService';
 import { useAutoScrollIntoView } from '../hooks/useAutoScrollIntoView';
 import { 
   AlertTriangle, 
@@ -33,11 +34,14 @@ export const SOSModule: React.FC<SOSModuleProps> = ({ onBack, onOpenCamouflage }
     setErrorMessage(null);
 
     const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : 'Web Client';
+    const activeSchool = getEscolaAtiva();
 
     if (!navigator.geolocation) {
       setErrorMessage('GPS não suportado neste navegador. Alerta emergencial básico registrado.');
-      saveSOSAlert({
-        dispositivo_info: userAgent
+      saveSOSAlertAsync({
+        dispositivo_info: userAgent,
+        escola_id: activeSchool?.id,
+        escola_nome: activeSchool?.nome
       });
       setSosSent(true);
       setLoadingGPS(false);
@@ -45,7 +49,7 @@ export const SOSModule: React.FC<SOSModuleProps> = ({ onBack, onOpenCamouflage }
     }
 
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
+      async (pos) => {
         const lat = pos.coords.latitude;
         const lng = pos.coords.longitude;
         const acc = pos.coords.accuracy;
@@ -56,20 +60,24 @@ export const SOSModule: React.FC<SOSModuleProps> = ({ onBack, onOpenCamouflage }
           accuracy: acc
         });
 
-        saveSOSAlert({
+        await saveSOSAlertAsync({
           latitude: lat,
           longitude: lng,
           precisao_metros: acc,
-          dispositivo_info: userAgent
+          dispositivo_info: userAgent,
+          escola_id: activeSchool?.id,
+          escola_nome: activeSchool?.nome
         });
 
         setSosSent(true);
         setLoadingGPS(false);
       },
-      (err) => {
+      async (err) => {
         setErrorMessage(`Não foi possível obter coordenadas exatas: ${err.message}. Alerta transmitido com registro geral.`);
-        saveSOSAlert({
-          dispositivo_info: userAgent
+        await saveSOSAlertAsync({
+          dispositivo_info: userAgent,
+          escola_id: activeSchool?.id,
+          escola_nome: activeSchool?.nome
         });
         setSosSent(true);
         setLoadingGPS(false);
