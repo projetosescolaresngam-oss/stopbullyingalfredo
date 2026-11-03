@@ -85,10 +85,10 @@ export const DenunciaForm: React.FC<DenunciaFormProps> = ({
   const [redeFiltroEscola, setRedeFiltroEscola] = useState<'Todas' | 'Estadual' | 'Municipal' | 'Federal' | 'Privada'>('Todas');
   const [viewModoEscolas, setViewModoEscolas] = useState<'cards' | 'select'>('cards');
 
-  // Filtro dinâmico das escolas cadastradas
+  // Filtro dinâmico das escolas cadastradas - exibe TODAS as escolas cadastradas, independente de estarem ativas ou não
   const escolasFiltradasOcorrencia = useMemo(() => {
     return escolasCadastradas
-      .filter(e => e.ativa !== false)
+      .filter(e => Boolean(e && e.id && e.nome))
       .filter(e => {
         const q = buscaEscolaOcorrencia.toLowerCase().trim();
         const matchBusca = !q || 
@@ -129,9 +129,19 @@ export const DenunciaForm: React.FC<DenunciaFormProps> = ({
       setEscolasCadastradas(schools);
       const ativa = getEscolaAtiva();
       setEscolaOcorrenciaId(currentId => {
-        if (!schools.some(e => e.id === currentId && e.ativa !== false)) {
-          setEscolaOcorrenciaNome(ativa.nome);
-          return ativa.id;
+        // Independente da escola estar marcada como ativa ou não, se ela existe na lista, preserva a seleção
+        const found = schools.find(e => e.id === currentId);
+        if (found) {
+          setEscolaOcorrenciaNome(found.nome);
+          return currentId;
+        }
+        if (currentId === 'outra') {
+          return 'outra';
+        }
+        if (schools.length > 0) {
+          const fallback = schools.find(e => e.ativa) || schools[0];
+          setEscolaOcorrenciaNome(fallback.nome);
+          return fallback.id;
         }
         return currentId;
       });
@@ -1103,7 +1113,7 @@ export const DenunciaForm: React.FC<DenunciaFormProps> = ({
                   
                   <div className="flex items-center gap-2">
                     <span className="text-[10px] font-bold text-purple-700 bg-purple-100 px-2.5 py-0.5 rounded-full border border-purple-200 uppercase">
-                      {escolasCadastradas.filter(e => e.ativa !== false).length} Escolas Cadastradas
+                      {escolasCadastradas.length} {escolasCadastradas.length === 1 ? 'Escola Cadastrada' : 'Escolas Cadastradas'}
                     </span>
 
                     {/* Alternador de Modo de Visualização */}
@@ -1206,6 +1216,16 @@ export const DenunciaForm: React.FC<DenunciaFormProps> = ({
                                   {esc.codigo_inep && (
                                     <span className="text-[9px] font-mono text-slate-500">
                                       INEP: {esc.codigo_inep}
+                                    </span>
+                                  )}
+
+                                  {esc.ativa ? (
+                                    <span className="text-[9px] font-bold text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                                      Escola Polo
+                                    </span>
+                                  ) : (
+                                    <span className="text-[9px] font-bold text-indigo-800 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-200">
+                                      Cadastrada
                                     </span>
                                   )}
                                 </div>
