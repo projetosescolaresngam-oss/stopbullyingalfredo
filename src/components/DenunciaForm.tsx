@@ -82,6 +82,24 @@ export const DenunciaForm: React.FC<DenunciaFormProps> = ({
   const [escolaOcorrenciaId, setEscolaOcorrenciaId] = useState<string>(escolaAtivaInicial.id);
   const [escolaOcorrenciaNome, setEscolaOcorrenciaNome] = useState<string>(escolaAtivaInicial.nome);
   const [buscaEscolaOcorrencia, setBuscaEscolaOcorrencia] = useState<string>('');
+  const [redeFiltroEscola, setRedeFiltroEscola] = useState<'Todas' | 'Estadual' | 'Municipal' | 'Federal' | 'Privada'>('Todas');
+  const [viewModoEscolas, setViewModoEscolas] = useState<'cards' | 'select'>('cards');
+
+  // Filtro dinâmico das escolas cadastradas
+  const escolasFiltradasOcorrencia = useMemo(() => {
+    return escolasCadastradas
+      .filter(e => e.ativa !== false)
+      .filter(e => {
+        const q = buscaEscolaOcorrencia.toLowerCase().trim();
+        const matchBusca = !q || 
+          e.nome.toLowerCase().includes(q) || 
+          (e.sigla && e.sigla.toLowerCase().includes(q)) ||
+          e.cidade.toLowerCase().includes(q) ||
+          (e.codigo_inep && e.codigo_inep.includes(q));
+        const matchRede = redeFiltroEscola === 'Todas' || e.rede === redeFiltroEscola;
+        return matchBusca && matchRede;
+      });
+  }, [escolasCadastradas, buscaEscolaOcorrencia, redeFiltroEscola]);
 
   // Escola selecionada no Passo 2
   const escolaSelecionada = useMemo(() => {
@@ -1065,10 +1083,10 @@ export const DenunciaForm: React.FC<DenunciaFormProps> = ({
             </div>
 
             {/* Seção: Em qual escola aconteceu o bullying? */}
-            <div className="space-y-3 p-4 rounded-2xl bg-gradient-to-r from-purple-50/80 via-indigo-50/60 to-purple-50/80 border border-purple-200">
+            <div className="space-y-3.5 p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-purple-50/90 via-indigo-50/70 to-purple-50/90 border-2 border-purple-200/90 shadow-xs">
               
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
+              <div className="space-y-2.5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <label className="text-xs font-black uppercase text-purple-900 flex items-center gap-1.5 tracking-wider">
                       <Building2 className="w-4 h-4 text-purple-600" /> Em qual escola aconteceu o bullying?
@@ -1082,59 +1100,240 @@ export const DenunciaForm: React.FC<DenunciaFormProps> = ({
                       ]}
                     />
                   </div>
-                  <span className="text-[10px] font-bold text-purple-700 bg-purple-100 px-2 py-0.5 rounded-full border border-purple-200 uppercase">
-                    * Encaminhamento Direto
-                  </span>
+                  
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold text-purple-700 bg-purple-100 px-2.5 py-0.5 rounded-full border border-purple-200 uppercase">
+                      {escolasCadastradas.filter(e => e.ativa !== false).length} Escolas Cadastradas
+                    </span>
+
+                    {/* Alternador de Modo de Visualização */}
+                    <button
+                      type="button"
+                      onClick={() => setViewModoEscolas(viewModoEscolas === 'cards' ? 'select' : 'cards')}
+                      className="text-[10px] font-bold text-purple-800 hover:text-purple-950 px-2.5 py-1 rounded-lg bg-white border border-purple-200 hover:border-purple-300 transition-colors cursor-pointer shadow-2xs"
+                      title={viewModoEscolas === 'cards' ? 'Alternar para lista suspensa' : 'Alternar para cards detalhados'}
+                    >
+                      {viewModoEscolas === 'cards' ? 'Menu Suspenso' : 'Ver em Cards'}
+                    </button>
+                  </div>
                 </div>
 
-                {escolasCadastradas.length > 3 && (
-                  <div className="relative mb-1">
+                {/* Filtro por Nome/Cidade e Rede de Ensino */}
+                <div className="space-y-2 pt-1">
+                  <div className="relative">
                     <Search className="w-3.5 h-3.5 text-purple-400 absolute left-3 top-1/2 -translate-y-1/2" />
                     <input
                       type="text"
                       value={buscaEscolaOcorrencia}
                       onChange={(e) => setBuscaEscolaOcorrencia(e.target.value)}
-                      placeholder="Pesquisar escola por nome ou cidade..."
-                      className="w-full pl-9 pr-3 py-1.5 rounded-xl bg-white border border-purple-200 text-xs text-[#241e33] placeholder-[#8a7f9d] focus:outline-none focus:border-purple-400"
+                      placeholder="Pesquisar escola por nome, cidade ou código INEP..."
+                      className="w-full pl-9 pr-8 py-2 rounded-xl bg-white border border-purple-200 text-xs text-[#241e33] placeholder-[#8a7f9d] focus:outline-none focus:border-purple-500 shadow-2xs"
+                    />
+                    {buscaEscolaOcorrencia && (
+                      <button
+                        type="button"
+                        onClick={() => setBuscaEscolaOcorrencia('')}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-purple-400 hover:text-purple-700 p-0.5 text-xs cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Pílulas de filtro por Rede */}
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none text-[11px]">
+                    <span className="text-[10px] font-bold text-purple-900 uppercase tracking-wider shrink-0 mr-1">
+                      Rede:
+                    </span>
+                    {(['Todas', 'Estadual', 'Municipal', 'Federal', 'Privada'] as const).map((r) => (
+                      <button
+                        key={r}
+                        type="button"
+                        onClick={() => setRedeFiltroEscola(r)}
+                        className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer shrink-0 ${
+                          redeFiltroEscola === r
+                            ? 'bg-purple-600 text-white shadow-xs'
+                            : 'bg-white/80 text-purple-800 hover:bg-white border border-purple-200'
+                        }`}
+                      >
+                        {r}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* VISUALIZAÇÃO EM CARDS / LISTA DAS ESCOLAS CADASTRADAS */}
+                {viewModoEscolas === 'cards' ? (
+                  <div className="space-y-2 pt-1">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-72 overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-purple-200">
+                      {escolasFiltradasOcorrencia.map((esc) => {
+                        const isSelected = escolaOcorrenciaId === esc.id;
+                        return (
+                          <div
+                            key={esc.id}
+                            onClick={() => {
+                              playSfx('click');
+                              setEscolaOcorrenciaId(esc.id);
+                              setEscolaOcorrenciaNome(esc.nome);
+                            }}
+                            className={`p-3 rounded-2xl border text-left transition-all cursor-pointer relative ${
+                              isSelected
+                                ? 'bg-purple-50/95 border-purple-500 ring-2 ring-purple-300 shadow-sm'
+                                : 'bg-white hover:bg-purple-50/40 border-purple-200 hover:border-purple-300'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="space-y-0.5 min-w-0 flex-1">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider ${
+                                    esc.rede === 'Municipal'
+                                      ? 'bg-amber-100 text-amber-900 border border-amber-200'
+                                      : esc.rede === 'Federal'
+                                      ? 'bg-cyan-100 text-cyan-900 border border-cyan-200'
+                                      : esc.rede === 'Privada'
+                                      ? 'bg-pink-100 text-pink-900 border border-pink-200'
+                                      : 'bg-purple-100 text-purple-900 border border-purple-200'
+                                  }`}>
+                                    {esc.rede}
+                                  </span>
+
+                                  {esc.sigla && (
+                                    <span className="text-[9px] font-mono font-bold text-purple-700 bg-white px-1.5 py-0.5 rounded border border-purple-200">
+                                      {esc.sigla}
+                                    </span>
+                                  )}
+
+                                  {esc.codigo_inep && (
+                                    <span className="text-[9px] font-mono text-slate-500">
+                                      INEP: {esc.codigo_inep}
+                                    </span>
+                                  )}
+                                </div>
+
+                                <h4 className="font-bold text-xs sm:text-sm text-[#181126] leading-tight truncate" title={esc.nome}>
+                                  {esc.nome}
+                                </h4>
+
+                                <p className="text-[11px] text-purple-800 flex items-center gap-1">
+                                  <MapPin className="w-3 h-3 text-purple-500 shrink-0" />
+                                  <span className="truncate">{esc.cidade} – {esc.estado}</span>
+                                </p>
+                              </div>
+
+                              <div className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 mt-0.5 ${
+                                isSelected ? 'bg-purple-600 border-purple-600 text-white' : 'border-purple-300 bg-white'
+                              }`}>
+                                {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      {/* Card de Opção: Outra Instituição */}
+                      <div
+                        onClick={() => {
+                          playSfx('click');
+                          setEscolaOcorrenciaId('outra');
+                          setEscolaOcorrenciaNome('Outra Instituição / Não listada');
+                        }}
+                        className={`p-3 rounded-2xl border text-left transition-all cursor-pointer relative ${
+                          escolaOcorrenciaId === 'outra'
+                            ? 'bg-purple-50/95 border-purple-500 ring-2 ring-purple-300 shadow-sm'
+                            : 'bg-white hover:bg-purple-50/40 border-purple-200 hover:border-purple-300'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="space-y-0.5">
+                            <span className="px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-slate-100 text-slate-800 border border-slate-200">
+                              Não Listada
+                            </span>
+                            <h4 className="font-bold text-xs sm:text-sm text-[#181126]">
+                              📍 Outra Instituição de Ensino
+                            </h4>
+                            <p className="text-[11px] text-slate-600">
+                              Clique para digitar manualmente o nome da sua escola
+                            </p>
+                          </div>
+                          <div className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 ${
+                            escolaOcorrenciaId === 'outra' ? 'bg-purple-600 border-purple-600 text-white' : 'border-purple-300 bg-white'
+                          }`}>
+                            {escolaOcorrenciaId === 'outra' && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {escolasFiltradasOcorrencia.length === 0 && (
+                      <p className="text-center py-4 text-xs text-purple-700 bg-white rounded-xl border border-purple-100">
+                        Nenhuma escola encontrada para &quot;{buscaEscolaOcorrencia}&quot;. Você pode selecionar &quot;Outra Instituição&quot; abaixo.
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  /* MODO MENU SUSPENSO CLÁSSICO */
+                  <select
+                    value={escolaOcorrenciaId}
+                    onChange={(e) => {
+                      playSfx('click');
+                      const targetId = e.target.value;
+                      setEscolaOcorrenciaId(targetId);
+                      const found = escolasCadastradas.find(esc => esc.id === targetId);
+                      if (found) {
+                        setEscolaOcorrenciaNome(found.nome);
+                      } else if (targetId === 'outra') {
+                        setEscolaOcorrenciaNome('Outra Instituição / Não listada');
+                      }
+                    }}
+                    className="w-full p-3.5 rounded-2xl bg-white border border-purple-300 font-bold text-sm text-[#241e33] focus:border-purple-600 focus:ring-2 focus:ring-purple-200 focus:outline-none transition-all shadow-xs cursor-pointer"
+                  >
+                    {escolasFiltradasOcorrencia.map((esc) => (
+                      <option key={esc.id} value={esc.id}>
+                        🏫 {esc.nome} ({esc.cidade} – {esc.estado} • {esc.rede})
+                      </option>
+                    ))}
+                    <option value="outra">📍 Outra Instituição / Não listada</option>
+                  </select>
+                )}
+
+                {/* Campo de Texto para Escola Não Listada */}
+                {escolaOcorrenciaId === 'outra' && (
+                  <div className="pt-2 animate-fadeIn">
+                    <label className="text-[11px] font-bold text-purple-900 block mb-1">
+                      Digite o nome e cidade da escola onde ocorreu o bullying:
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={escolaOcorrenciaNome === 'Outra Instituição / Não listada' ? '' : escolaOcorrenciaNome}
+                      onChange={(e) => setEscolaOcorrenciaNome(e.target.value || 'Outra Instituição / Não listada')}
+                      placeholder="Ex: Escola Estadual José de Alencar, Fortaleza/CE..."
+                      className="w-full p-3 rounded-xl bg-white border border-purple-400 text-xs text-[#241e33] focus:outline-none focus:border-purple-600 shadow-inner"
+                      autoFocus
                     />
                   </div>
                 )}
 
-                <select
-                  value={escolaOcorrenciaId}
-                  onChange={(e) => {
-                    playSfx('click');
-                    const targetId = e.target.value;
-                    setEscolaOcorrenciaId(targetId);
-                    const found = escolasCadastradas.find(esc => esc.id === targetId);
-                    if (found) {
-                      setEscolaOcorrenciaNome(found.nome);
-                    } else if (targetId === 'outra') {
-                      setEscolaOcorrenciaNome('Outra Instituição / Não listada');
-                    }
-                  }}
-                  className="w-full p-3.5 rounded-2xl bg-white border border-purple-300 font-bold text-sm text-[#241e33] focus:border-purple-600 focus:ring-2 focus:ring-purple-200 focus:outline-none transition-all shadow-xs cursor-pointer"
-                >
-                  {escolasCadastradas
-                    .filter(e => e.ativa !== false)
-                    .filter(e => !buscaEscolaOcorrencia.trim() || e.nome.toLowerCase().includes(buscaEscolaOcorrencia.toLowerCase()) || e.cidade.toLowerCase().includes(buscaEscolaOcorrencia.toLowerCase()))
-                    .map((esc) => (
-                      <option key={esc.id} value={esc.id}>
-                        🏫 {esc.nome} ({esc.cidade} – {esc.estado})
-                      </option>
-                    ))}
-                  <option value="outra">📍 Outra Instituição / Não listada</option>
-                </select>
+                {/* Banner de Confirmação da Escola Selecionada com Detalhes */}
+                {escolaSelecionada && escolaOcorrenciaId !== 'outra' && (
+                  <div className="mt-2 p-3 rounded-xl bg-white/90 border border-purple-200 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-2xs">
+                    <div className="space-y-0.5">
+                      <span className="text-[10px] font-bold text-purple-700 uppercase tracking-wider block">
+                        Destino do Encaminhamento Restorativo:
+                      </span>
+                      <p className="font-bold text-purple-950 flex items-center gap-1.5">
+                        <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                        <span>{escolaSelecionada.nome}</span>
+                      </p>
+                      <p className="text-[11px] text-slate-600">
+                        {escolaSelecionada.comissao_mediacao_nome || 'Comissão de Mediação Escolar'} • {turmasDaEscola.length > 0 ? `${turmasDaEscola.length} turmas mapeadas` : 'Turmas gerais'}
+                      </p>
+                    </div>
 
-                {escolaOcorrenciaId === 'outra' && (
-                  <input
-                    type="text"
-                    required
-                    value={escolaOcorrenciaNome === 'Outra Instituição / Não listada' ? '' : escolaOcorrenciaNome}
-                    onChange={(e) => setEscolaOcorrenciaNome(e.target.value || 'Outra Instituição / Não listada')}
-                    placeholder="Escreva o nome da escola onde ocorreu o bullying..."
-                    className="w-full p-3 rounded-xl bg-white border border-purple-300 text-xs text-[#241e33] focus:outline-none focus:border-purple-500 mt-2"
-                  />
+                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-1 rounded-lg border border-emerald-200 shrink-0 self-start sm:self-center">
+                      <CheckCircle2 className="w-3.5 h-3.5" /> Canal Verificado
+                    </span>
+                  </div>
                 )}
               </div>
 

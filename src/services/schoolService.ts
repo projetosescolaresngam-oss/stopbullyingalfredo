@@ -153,26 +153,147 @@ export const MODELOS_ESCOLAS_EXEMPLO: Array<Omit<PerfilEscola, 'id' | 'ativa' | 
   }
 ];
 
+export const ESCOLAS_SEMENTE_SISTEMA: PerfilEscola[] = [
+  ESCOLA_PADRAO_ALFREDO_MACHADO,
+  {
+    id: 'escola-eef-maria-do-carmo',
+    nome: 'E.E.F. Maria do Carmo Bezerra',
+    sigla: 'EEF-MCB',
+    codigo_inep: '23089124',
+    cidade: 'Madalena',
+    estado: 'CE',
+    rede: 'Municipal',
+    orgao_regional: 'SME • SECRETARIA MUNICIPAL DE EDUCAÇÃO DE MADALENA',
+    conselho_tutelar_local: 'Conselho Tutelar de Madalena – CE',
+    endereco: 'Av. Rodolfo Teófilo, 450 - Bairro São José, Madalena - CE',
+    telefone: '(88) 3442-5678',
+    email_institucional: 'eef.mariadocarmo@madalena.ce.gov.br',
+    email_conselho_tutelar: 'conselhotutelar.madalena@ceara.gov.br',
+    diretor: 'Prof. Raimundo Nonato Ferreira',
+    coordenador_pedagogico: 'Profª. Ana Cláudia Silveira',
+    comissao_mediacao_nome: 'Núcleo de Cidadania & Acolhimento Estudantil',
+    ativa: false,
+    criada_em: '2026-01-02T00:00:00.000Z',
+    turmas_cadastradas: ['6º Ano A', '6º Ano B', '7º Ano A', '8º Ano A', '9º Ano A', '9º Ano B'],
+    estrutura_escolar: gerarEstruturaPadrao('fundamental'),
+    anos_series_atendidos: ['6º Ano', '7º Ano', '8º Ano', '9º Ano'],
+    turnos_atendidos: ['Manhã', 'Tarde'],
+    logo_tipo: 'municipal',
+    descricao: 'Escola de Ensino Fundamental da rede municipal com foco na transição dos anos finais.'
+  },
+  {
+    id: 'escola-santos-dumont-quixada',
+    nome: 'Colégio Estadual Santos Dumont',
+    sigla: 'CESD',
+    codigo_inep: '23012984',
+    cidade: 'Quixadá',
+    estado: 'CE',
+    rede: 'Estadual',
+    orgao_regional: 'SEDUC • CREDE 12 • QUIXADÁ – CE',
+    conselho_tutelar_local: 'Conselho Tutelar de Quixadá – CE',
+    endereco: 'Rua José Jucá, 890 - Centro, Quixadá - CE',
+    telefone: '(88) 3412-4000',
+    email_institucional: 'santosdumont@escola.ce.gov.br',
+    email_conselho_tutelar: 'conselhotutelar.quixada@ceara.gov.br',
+    diretor: 'Profª. Elisabete Carvalho Gomes',
+    coordenador_pedagogico: 'Prof. Marcos Vinícius Lima',
+    comissao_mediacao_nome: 'Comissão de Mediação Restaurativa Santos Dumont',
+    ativa: false,
+    criada_em: '2026-01-03T00:00:00.000Z',
+    turmas_cadastradas: ['1º Ano A', '1º Ano B', '2º Ano A', '2º Ano B', '3º Ano A', '3º Ano B'],
+    estrutura_escolar: gerarEstruturaPadrao('medio'),
+    anos_series_atendidos: ['1º Ano', '2º Ano', '3º Ano'],
+    turnos_atendidos: ['Manhã', 'Tarde', 'Integral'],
+    logo_tipo: 'estadual',
+    descricao: 'Unidade escolar com tradição em projetos de protagonismo juvenil e tecnologia educacional.'
+  },
+  {
+    id: 'escola-ifce-caninde',
+    nome: 'IFCE – Instituto Federal do Ceará (Campus Canindé)',
+    sigla: 'IFCE-CAN',
+    codigo_inep: '23249010',
+    cidade: 'Canindé',
+    estado: 'CE',
+    rede: 'Federal',
+    orgao_regional: 'MEC • SETEC • REITORIA DO IFCE',
+    conselho_tutelar_local: 'Conselho Tutelar de Canindé – CE',
+    endereco: 'Rodovia BR-020, Km 303 - Jubaia, Canindé - CE',
+    telefone: '(85) 3698-8900',
+    email_institucional: 'gabinete.caninde@ifce.edu.br',
+    email_conselho_tutelar: 'conselhotutelar.caninde@ceara.gov.br',
+    diretor: 'Prof. Dr. Marcelo Tavares',
+    coordenador_pedagogico: 'Profª. Ma. Cecília Albuquerque',
+    comissao_mediacao_nome: 'Comissão Disciplinar e de Convivência Comunitária',
+    ativa: false,
+    criada_em: '2026-01-04T00:00:00.000Z',
+    turmas_cadastradas: ['1º Ano Integrado Info', '2º Ano Integrado Info', '3º Ano Integrado Info', '1º Redes', '2º Redes'],
+    estrutura_escolar: gerarEstruturaPadrao('medio'),
+    anos_series_atendidos: ['1º Ano', '2º Ano', '3º Ano'],
+    turnos_atendidos: ['Integral', 'Manhã'],
+    logo_tipo: 'padrao',
+    descricao: 'Instituição Federal de Educação, Ciência e Tecnologia com cursos técnicos integrados.'
+  },
+  {
+    id: 'escola-colegio-agora-fortaleza',
+    nome: 'Colégio Ágora da Paz',
+    sigla: 'CAPAZ',
+    codigo_inep: '23984120',
+    cidade: 'Fortaleza',
+    estado: 'CE',
+    rede: 'Privada',
+    orgao_regional: 'SEDUC / SINEPE-CE • FORTALEZA – CE',
+    conselho_tutelar_local: 'Conselho Tutelar Regional VI – Fortaleza – CE',
+    endereco: 'Rua Desembargador Moreira, 2100 - Aldeota, Fortaleza - CE',
+    telefone: '(85) 3261-9000',
+    email_institucional: 'contato@colegioagora.com.br',
+    email_conselho_tutelar: 'conselhotutelar.reg6@fortaleza.ce.gov.br',
+    diretor: 'Dra. Renata Vasconcelos',
+    coordenador_pedagogico: 'Prof. Guilherme Peixoto',
+    comissao_mediacao_nome: 'Núcleo de Inteligência Socioemocional e Diálogo',
+    ativa: false,
+    criada_em: '2026-01-05T00:00:00.000Z',
+    turmas_cadastradas: ['Fundamental II - 6º ao 9º', 'Ensino Médio - 1ª à 3ª Série'],
+    estrutura_escolar: gerarEstruturaPadrao('completo'),
+    anos_series_atendidos: ['6º Ano', '7º Ano', '8º Ano', '9º Ano', '1º Ano', '2º Ano', '3º Ano'],
+    turnos_atendidos: ['Manhã', 'Tarde'],
+    logo_tipo: 'personalizado',
+    descricao: 'Instituição privada de ensino com metodologia ativa e programa permanente de convivência ética.'
+  }
+];
+
 export const getEscolas = (): PerfilEscola[] => {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_ESCOLAS);
     if (!raw) {
-      const initial = [ESCOLA_PADRAO_ALFREDO_MACHADO];
-      localStorage.setItem(STORAGE_KEY_ESCOLAS, JSON.stringify(initial));
+      localStorage.setItem(STORAGE_KEY_ESCOLAS, JSON.stringify(ESCOLAS_SEMENTE_SISTEMA));
       localStorage.setItem(STORAGE_KEY_ATIVA_ID, ESCOLA_PADRAO_ALFREDO_MACHADO.id);
-      return initial;
+      return ESCOLAS_SEMENTE_SISTEMA;
     }
     const list: PerfilEscola[] = JSON.parse(raw);
     if (!Array.isArray(list) || list.length === 0) {
-      const initial = [ESCOLA_PADRAO_ALFREDO_MACHADO];
-      localStorage.setItem(STORAGE_KEY_ESCOLAS, JSON.stringify(initial));
+      localStorage.setItem(STORAGE_KEY_ESCOLAS, JSON.stringify(ESCOLAS_SEMENTE_SISTEMA));
       localStorage.setItem(STORAGE_KEY_ATIVA_ID, ESCOLA_PADRAO_ALFREDO_MACHADO.id);
-      return initial;
+      return ESCOLAS_SEMENTE_SISTEMA;
     }
-    return list;
+
+    // Garante que todas as escolas modelo estejam disponíveis sem sobrescrever personalizações
+    let mudou = false;
+    const idsExistentes = new Set(list.map(e => e.id));
+    const merged = [...list];
+    for (const sem of ESCOLAS_SEMENTE_SISTEMA) {
+      if (!idsExistentes.has(sem.id)) {
+        merged.push(sem);
+        idsExistentes.add(sem.id);
+        mudou = true;
+      }
+    }
+    if (mudou) {
+      localStorage.setItem(STORAGE_KEY_ESCOLAS, JSON.stringify(merged));
+    }
+    return merged;
   } catch (err) {
     console.error('Erro ao carregar lista de escolas:', err);
-    return [ESCOLA_PADRAO_ALFREDO_MACHADO];
+    return ESCOLAS_SEMENTE_SISTEMA;
   }
 };
 
