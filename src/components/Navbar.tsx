@@ -4,6 +4,7 @@ import { StopHandLogo } from './BrandingAssets';
 import { UserProfileHeader } from '../UserProfileHeader';
 import { useApp } from '../AppContext';
 import { useAccessibility } from '../AccessibilityContext';
+import { GoogleDriveWorkspaceCard } from './gestao/DiagnosticoBancoView';
 import { 
   Home, 
   Megaphone, 
@@ -60,6 +61,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, onNavigate, onOpenP
   const { currentAccount, openAuthModal } = useApp();
   const { toggleToolbar } = useAccessibility();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isDriveModalOpen, setIsDriveModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<MenuCategoryFilter>('todos');
   const menuContainerRef = useRef<HTMLDivElement>(null);
@@ -452,6 +454,17 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, onNavigate, onOpenP
             <span className="tracking-wide whitespace-nowrap">Painel de Gestão</span>
           </button>
 
+          {/* 9. GOOGLE DRIVE WORKSPACE */}
+          <button
+            type="button"
+            onClick={() => setIsDriveModalOpen(true)}
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[11px] sm:text-xs font-bold transition-all shadow-xs cursor-pointer flex-shrink-0 whitespace-nowrap select-none bg-blue-50 text-blue-900 border border-blue-200 hover:bg-blue-100 hover:border-blue-300"
+            title="Conectar e Gerenciar Arquivos no Google Drive"
+          >
+            <Cloud className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-600 flex-shrink-0" />
+            <span className="tracking-wide whitespace-nowrap">Google Drive</span>
+          </button>
+
         </div>
 
         {/* LADO DIREITO: GAVETA / BENTO MENU DE NAVEGAÇÃO */}
@@ -773,6 +786,23 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, onNavigate, onOpenP
         </div>
 
       </div>
+
+      {/* Modal de Integração Google Drive */}
+      {isDriveModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6">
+          <div className="max-w-3xl w-full relative">
+            <button
+              type="button"
+              onClick={() => setIsDriveModalOpen(false)}
+              className="absolute top-3 right-3 z-10 p-2 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 shadow-sm cursor-pointer"
+              title="Fechar Google Drive"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <GoogleDriveWorkspaceCard lightTheme />
+          </div>
+        </div>
+      )}
     </header>
   );
 };
