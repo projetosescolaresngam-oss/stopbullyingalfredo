@@ -36,7 +36,8 @@ import {
   restaurarEscolasPadrao,
   MODELOS_ESCOLAS_EXEMPLO,
   getEstruturaEscola,
-  gerarEstruturaPadrao
+  gerarEstruturaPadrao,
+  syncEscolasFromSupabase
 } from '../../services/schoolService';
 
 interface PerfisEscolasTabProps {
@@ -95,6 +96,9 @@ export const PerfisEscolasTab: React.FC<PerfisEscolasTabProps> = ({
   };
 
   useEffect(() => {
+    syncEscolasFromSupabase().then(() => {
+      recarregarEscolas();
+    }).catch(() => {});
     const handleUpdate = () => {
       recarregarEscolas();
     };

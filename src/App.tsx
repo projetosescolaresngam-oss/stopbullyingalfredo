@@ -29,6 +29,7 @@ import {
   VLibrasWidget 
 } from './components/accessibility/AccessibilityToolbar';
 import { addLog } from './services/storageService';
+import { syncEscolasFromSupabase } from './services/schoolService';
 import { recordSiteAccess } from './services/analyticsService';
 
 export default function App() {
@@ -66,8 +67,10 @@ export default function App() {
     'guia'
   ];
 
-  // Read URL hash on load
+  // Read URL hash on load and sync schools from Supabase
   useEffect(() => {
+    syncEscolasFromSupabase().catch(() => {});
+
     const handleHash = () => {
       const hash = window.location.hash.replace('#', '').toLowerCase() as ViewMode;
       if (validViews.includes(hash)) {

@@ -207,7 +207,7 @@ export const PainelGestao: React.FC<PainelGestaoProps> = ({ onBack }) => {
 
   useEffect(() => {
     if (isAuthenticated) {
-      const sessionToken = getGestaoSessionToken();
+      const sessionToken = getGestaoSessionToken() || undefined;
       syncFromSupabase(sessionToken).then(() => loadDashboardData()).catch(() => loadDashboardData());
       const handleStorageUpdate = () => {
         loadDashboardData();
@@ -217,7 +217,7 @@ export const PainelGestao: React.FC<PainelGestaoProps> = ({ onBack }) => {
         window.removeEventListener('storage_denuncias_updated', handleStorageUpdate);
       };
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, activeTab]);
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -850,13 +850,16 @@ export const PainelGestao: React.FC<PainelGestaoProps> = ({ onBack }) => {
 
             {/* Recarregar dados */}
             <button
-              onClick={() => {
+              onClick={async () => {
                 playSfx('click');
+                await syncFromSupabase(getGestaoSessionToken() || undefined);
                 loadDashboardData();
-                showToast('Dados atualizados com sucesso!');
+                setEscolaAtivaState(getEscolaAtiva());
+                setEscolasCadastradas(getEscolas());
+                showToast('Dados sincronizados com o banco Supabase!');
               }}
               className="p-2.5 rounded-2xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white border border-white/10 text-xs font-bold transition-all cursor-pointer"
-              title="Atualizar Dados Operacionais"
+              title="Sincronizar e Atualizar Dados do Supabase"
             >
               <RefreshCw className="w-4 h-4" />
             </button>

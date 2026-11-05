@@ -1114,7 +1114,7 @@ export const ModalMediacao: React.FC<ModalMediacaoProps> = ({
                         </div>
 
                         <span className="text-gray-400 text-[11px]">
-                          {new Date(acao.dataHora).toLocaleString('pt-BR')} • <strong className="text-gray-200">{acao.autor}</strong>
+                          {new Date(acao.dataHora || acao.data_hora || new Date().toISOString()).toLocaleString('pt-BR')} • <strong className="text-gray-200">{acao.autor}</strong>
                         </span>
                       </div>
 

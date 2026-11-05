@@ -140,6 +140,47 @@ export const getEscolaAtiva = (): PerfilEscola => {
   return escolas[0] || ESCOLA_PADRAO_ALFREDO_MACHADO;
 };
 
+const SYSTEM_SCHOOLS_SEED = '__system_perfis_escolas_v1__';
+
+export async function pushEscolasSnapshotToSupabase(
+  escolasList?: PerfilEscola[],
+  ativaIdOverride?: string
+): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase || !isSupabaseConfigured()) return;
+
+  const list = (escolasList || getEscolas()).filter(
+    (e) => e && e.id && !FICTITIOUS_SCHOOL_IDS.has(e.id)
+  );
+  const ativaId =
+    ativaIdOverride ||
+    localStorage.getItem(STORAGE_KEY_ATIVA_ID) ||
+    list.find((e) => e.ativa)?.id ||
+    ESCOLA_PADRAO_ALFREDO_MACHADO.id;
+
+  try {
+    await supabase.from('estudantes_gamificacao').upsert(
+      {
+        student_seed: SYSTEM_SCHOOLS_SEED,
+        student_code: 'SYSTEM_PERFIS_ESCOLAS',
+        current_level: 1,
+        current_xp: list.length,
+        next_level_xp: 100,
+        level_title: 'Gestão Multi-Escolas',
+        stats: {
+          escolas: list,
+          ativaId,
+          updatedAt: new Date().toISOString(),
+        },
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'student_seed' }
+    );
+  } catch (err) {
+    console.warn('[Supabase Schools Snapshot Sync Warn]', err);
+  }
+}
+
 export const setEscolaAtiva = (escolaId: string): PerfilEscola => {
   const escolas = getEscolas();
   const target = escolas.find(e => e.id === escolaId);
@@ -157,6 +198,19 @@ export const setEscolaAtiva = (escolaId: string): PerfilEscola => {
     localStorage.setItem(STORAGE_KEY_ATIVA_ID, escolaId);
   } catch (err) {
     console.error('Erro ao salvar escola ativa:', err);
+  }
+
+  // Sincroniza a escola ativa com o banco de dados Supabase
+  pushEscolasSnapshotToSupabase(updatedList, escolaId).catch(() => {});
+
+  const supabase = getSupabase();
+  if (supabase && isSupabaseConfigured()) {
+    (async () => {
+      try {
+        await supabase.from('perfis_escolas').update({ ativa: false }).neq('id', escolaId);
+        await supabase.from('perfis_escolas').update({ ativa: true }).eq('id', escolaId);
+      } catch {}
+    })();
   }
 
   // Notifica o sistema inteiro sobre a alteração
@@ -258,6 +312,8 @@ export const salvarEscola = (
     new Set(estrutura.map(e => e.turno))
   );
 
+  let novaLista: PerfilEscola[];
+
   if (isEditing && dados.id) {
     escolaAtualizada = {
       ...(escolas.find(e => e.id === dados.id)!),
@@ -274,7 +330,7 @@ export const salvarEscola = (
       turnos_atendidos: turnosCalculados
     };
 
-    const novaLista = escolas.map(e => e.id === dados.id ? escolaAtualizada : e);
+    novaLista = escolas.map(e => e.id === dados.id ? escolaAtualizada : e);
     localStorage.setItem(STORAGE_KEY_ESCOLAS, JSON.stringify(novaLista));
   } else {
     const novoId = `escola-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
@@ -305,7 +361,7 @@ export const salvarEscola = (
       descricao: dados.descricao?.trim() || 'Unidade escolar cadastrada no Sistema StopBullying.'
     };
 
-    const novaLista = [...escolas, escolaAtualizada];
+    novaLista = [...escolas, escolaAtualizada];
     localStorage.setItem(STORAGE_KEY_ESCOLAS, JSON.stringify(novaLista));
   }
 
@@ -314,7 +370,10 @@ export const salvarEscola = (
   }));
   window.dispatchEvent(new Event('storage'));
 
-  // Sincronização em nuvem com Supabase (PostgreSQL) com RPC segura autenticada
+  // 1. Sincroniza snapshot completo em estudantes_gamificacao (funciona mesmo sem tabela perfis_escolas)
+  pushEscolasSnapshotToSupabase(novaLista).catch(() => {});
+
+  // 2. Sincroniza também na tabela dedicada perfis_escolas / RPC se existir
   const supabase = getSupabase();
   if (supabase && isSupabaseConfigured()) {
     const escolaPayload = {
@@ -349,22 +408,15 @@ export const salvarEscola = (
         if (!sessionToken) {
           sessionToken = await ensureGestaoServerSession();
         }
-        // 1. Prioriza RPC de gestão com validação de sessão segura no PostgreSQL
-        const { data: rpcData, error: rpcError } = await supabase.rpc('gestao_salvar_escola', {
+        const { error: rpcError } = await supabase.rpc('gestao_salvar_escola', {
           p_session_token: sessionToken,
           p_escola: escolaPayload
         });
 
         if (rpcError) {
-          console.warn('[Supabase Sync Escola RPC Warn]', rpcError.message);
-          // 2. Fallback de compatibilidade se a RPC ainda não tiver sido criada no banco
           await supabase.from('perfis_escolas').upsert(escolaPayload);
-        } else {
-          console.log('[Supabase Escola Sincronizada]', escolaAtualizada.nome);
         }
-      } catch (err) {
-        console.warn('[Supabase Sync Escola Warn]', err);
-      }
+      } catch {}
     })();
   }
 
@@ -383,7 +435,17 @@ export const excluirEscola = (escolaId: string): boolean => {
   const novaLista = escolas.filter(e => e.id !== escolaId);
   localStorage.setItem(STORAGE_KEY_ESCOLAS, JSON.stringify(novaLista));
 
-  // Sincronização com Supabase (exclusão remota via RPC autenticada)
+  // Se a escola removida era a ativa, ativa a primeira remanescente
+  if (escolaParaRemover.ativa) {
+    setEscolaAtiva(novaLista[0].id);
+  } else {
+    pushEscolasSnapshotToSupabase(novaLista).catch(() => {});
+    window.dispatchEvent(new CustomEvent('escola_ativa_updated', {
+      detail: { escolaAtiva: getEscolaAtiva() }
+    }));
+  }
+
+  // Sincronização com Supabase (exclusão remota via RPC autenticada / tabela)
   const supabase = getSupabase();
   if (supabase && isSupabaseConfigured()) {
     (async () => {
@@ -403,15 +465,6 @@ export const excluirEscola = (escolaId: string): boolean => {
     })();
   }
 
-  // Se a escola removida era a ativa, ativa a primeira remanescente
-  if (escolaParaRemover.ativa) {
-    setEscolaAtiva(novaLista[0].id);
-  } else {
-    window.dispatchEvent(new CustomEvent('escola_ativa_updated', {
-      detail: { escolaAtiva: getEscolaAtiva() }
-    }));
-  }
-
   return true;
 };
 
@@ -420,47 +473,99 @@ export const syncEscolasFromSupabase = async (): Promise<PerfilEscola[]> => {
   if (!supabase || !isSupabaseConfigured()) return getEscolas();
 
   try {
-    const { data, error } = await supabase
-      .from('perfis_escolas')
-      .select('*')
-      .order('criada_em', { ascending: true });
+    const localList = getEscolas();
+    const map = new Map<string, PerfilEscola>();
+    localList.forEach(e => {
+      if (e && e.id && !FICTITIOUS_SCHOOL_IDS.has(e.id)) {
+        map.set(e.id, e);
+      }
+    });
 
-    if (!error && Array.isArray(data) && data.length > 0) {
-      const localList = getEscolas();
-      const map = new Map<string, PerfilEscola>();
-      localList.forEach(e => map.set(e.id, e));
+    let remoteAtivaId: string | undefined;
 
-      data.forEach((remote: any) => {
-        if (FICTITIOUS_SCHOOL_IDS.has(remote.id)) return;
-        map.set(remote.id, {
-          id: remote.id,
-          nome: remote.nome,
-          sigla: remote.sigla || undefined,
-          codigo_inep: remote.codigo_inep || undefined,
-          cidade: remote.cidade,
-          estado: remote.estado,
-          rede: remote.rede,
-          orgao_regional: remote.orgao_regional,
-          conselho_tutelar_local: remote.conselho_tutelar_local,
-          endereco: remote.endereco || undefined,
-          telefone: remote.telefone || undefined,
-          email_institucional: remote.email_institucional || undefined,
-          email_conselho_tutelar: remote.email_conselho_tutelar || undefined,
-          diretor: remote.diretor || undefined,
-          coordenador_pedagogico: remote.coordenador_pedagogico || undefined,
-          comissao_mediacao_nome: remote.comissao_mediacao_nome || undefined,
-          ativa: Boolean(remote.ativa),
-          criada_em: remote.criada_em || remote.created_at || new Date().toISOString(),
-          turmas_cadastradas: remote.turmas_cadastradas || [],
-          estrutura_escolar: remote.estrutura_escolar || [],
-          logo_tipo: remote.logo_tipo || 'padrao',
-          descricao: remote.descricao || undefined
+    // 1. Puxar snapshot universal da gestão (estudantes_gamificacao -> __system_perfis_escolas_v1__)
+    try {
+      const { data: snapRow, error: snapErr } = await supabase
+        .from('estudantes_gamificacao')
+        .select('stats')
+        .eq('student_seed', SYSTEM_SCHOOLS_SEED)
+        .maybeSingle();
+
+      if (!snapErr && snapRow && snapRow.stats) {
+        const statsObj = snapRow.stats as { escolas?: PerfilEscola[]; ativaId?: string };
+        if (statsObj.ativaId && !FICTITIOUS_SCHOOL_IDS.has(statsObj.ativaId)) {
+          remoteAtivaId = statsObj.ativaId;
+        }
+        if (Array.isArray(statsObj.escolas)) {
+          statsObj.escolas.forEach((rem) => {
+            if (!rem || !rem.id || FICTITIOUS_SCHOOL_IDS.has(rem.id)) return;
+            map.set(rem.id, {
+              ...rem,
+              ativa: remoteAtivaId ? rem.id === remoteAtivaId : Boolean(rem.ativa),
+            });
+          });
+        }
+      }
+    } catch {}
+
+    // 2. Puxar também da tabela dedicada perfis_escolas (se existir no banco)
+    try {
+      const { data, error } = await supabase
+        .from('perfis_escolas')
+        .select('*')
+        .order('criada_em', { ascending: true });
+
+      if (!error && Array.isArray(data) && data.length > 0) {
+        data.forEach((remote: any) => {
+          if (!remote || !remote.id || FICTITIOUS_SCHOOL_IDS.has(remote.id)) return;
+          if (remote.ativa) {
+            remoteAtivaId = remote.id;
+          }
+          map.set(remote.id, {
+            id: remote.id,
+            nome: remote.nome,
+            sigla: remote.sigla || undefined,
+            codigo_inep: remote.codigo_inep || undefined,
+            cidade: remote.cidade,
+            estado: remote.estado,
+            rede: remote.rede,
+            orgao_regional: remote.orgao_regional,
+            conselho_tutelar_local: remote.conselho_tutelar_local,
+            endereco: remote.endereco || undefined,
+            telefone: remote.telefone || undefined,
+            email_institucional: remote.email_institucional || undefined,
+            email_conselho_tutelar: remote.email_conselho_tutelar || undefined,
+            diretor: remote.diretor || undefined,
+            coordenador_pedagogico: remote.coordenador_pedagogico || undefined,
+            comissao_mediacao_nome: remote.comissao_mediacao_nome || undefined,
+            ativa: Boolean(remote.ativa),
+            criada_em: remote.criada_em || remote.created_at || new Date().toISOString(),
+            turmas_cadastradas: remote.turmas_cadastradas || [],
+            estrutura_escolar: remote.estrutura_escolar || [],
+            logo_tipo: remote.logo_tipo || 'padrao',
+            descricao: remote.descricao || undefined
+          });
         });
-      });
+      }
+    } catch {}
 
-      const merged = Array.from(map.values());
+    const finalAtivaId =
+      remoteAtivaId ||
+      localStorage.getItem(STORAGE_KEY_ATIVA_ID) ||
+      ESCOLA_PADRAO_ALFREDO_MACHADO.id;
+
+    const merged = Array.from(map.values()).map((esc) => ({
+      ...esc,
+      ativa: esc.id === finalAtivaId,
+    }));
+
+    if (merged.length > 0) {
       localStorage.setItem(STORAGE_KEY_ESCOLAS, JSON.stringify(merged));
-      
+      localStorage.setItem(STORAGE_KEY_ATIVA_ID, finalAtivaId);
+
+      // Garante que qualquer escola cadastrada localmente também suba para o banco
+      pushEscolasSnapshotToSupabase(merged, finalAtivaId).catch(() => {});
+
       window.dispatchEvent(new CustomEvent('escola_ativa_updated', {
         detail: { escolaAtiva: getEscolaAtiva() }
       }));
@@ -490,6 +595,7 @@ export const restaurarEscolasPadrao = (): PerfilEscola[] => {
   const listaInicial = [ESCOLA_PADRAO_ALFREDO_MACHADO];
   localStorage.setItem(STORAGE_KEY_ESCOLAS, JSON.stringify(listaInicial));
   localStorage.setItem(STORAGE_KEY_ATIVA_ID, ESCOLA_PADRAO_ALFREDO_MACHADO.id);
+  pushEscolasSnapshotToSupabase(listaInicial, ESCOLA_PADRAO_ALFREDO_MACHADO.id).catch(() => {});
 
   window.dispatchEvent(new CustomEvent('escola_ativa_updated', {
     detail: { escolaAtiva: ESCOLA_PADRAO_ALFREDO_MACHADO }

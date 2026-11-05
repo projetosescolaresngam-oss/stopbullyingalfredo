@@ -218,19 +218,370 @@ function notifyStorageUpdated(): void {
   }
 }
 
-// Nota de Segurança: Sincronização geral de denúncias NÃO ocorre automaticamente
-// na inicialização do site para visitantes públicos (preservação do sigilo dos relatos).
-// A listagem completa ocorre apenas sob demanda autenticada no Painel de Gestão Escolar.
+const STORAGE_KEY_GESTAO_METADATA = 'stopbullying_gestao_metadata_v1';
+const SYSTEM_GESTAO_METADATA_SEED = '__system_gestao_metadata_v1__';
 
+const VALID_DENUNCIA_DB_COLUMNS = new Set([
+  'id',
+  'protocolo',
+  'tipo_violencia',
+  'local_escola',
+  'descricao',
+  'link_cyberbullying',
+  'midia_anexa',
+  'midia_tipo',
+  'midia_duracao',
+  'nivel_gravidade',
+  'status',
+  'data_envio',
+  'tipos_selecionados',
+  'turno',
+  'frequencia',
+  'papel_denunciante',
+  'turma_envolvida',
+  'provas_anexas',
+  'nivel_escalada',
+  'is_sos',
+  'etapa_mediacao',
+  'impactos_identificados',
+  'medidas_protecao',
+  'updated_at'
+]);
+
+export interface DenunciaExtraCloudMetadata {
+  feedback_escola?: FeedbackEscola;
+  historico_feedbacks?: FeedbackEscola[];
+  historico_acoes?: { data_hora: string; acao: string; responsavel: string }[];
+  escola_id?: string;
+  escola_nome?: string;
+  escola_ocorrencia_id?: string;
+  escola_ocorrencia_nome?: string;
+  serie_ocorrencia?: string;
+  turma_ocorrencia?: string;
+  turno_ocorrencia?: string;
+  escola_acusado_id?: string;
+  escola_acusado_nome?: string;
+  serie_acusado?: string;
+  turma_acusado?: string;
+  turno_acusado?: string;
+  agressor_grupo?: string;
+}
+
+export interface GestaoCloudMetadata {
+  denunciaExtras: Record<string, DenunciaExtraCloudMetadata>;
+  sosExtras: Record<string, { escola_id?: string; escola_nome?: string }>;
+  emailsConfig?: {
+    emailConselhoTutelar: string;
+    emailEscola: string;
+    telefoneConselhoTutelar: string;
+    responsavelEnvio: string;
+    ultimoRelatorioMensalEnviado?: string;
+    agendamentoAtivo: boolean;
+  };
+  deletedIds?: string[];
+  deletedProtocolos?: string[];
+  updatedAt: string;
+}
+
+function getLocalGestaoMetadata(): GestaoCloudMetadata {
+  const empty: GestaoCloudMetadata = {
+    denunciaExtras: {},
+    sosExtras: {},
+    updatedAt: new Date().toISOString()
+  };
+  try {
+    if (typeof window === 'undefined') return empty;
+    const raw = localStorage.getItem(STORAGE_KEY_GESTAO_METADATA);
+    if (!raw) return empty;
+    const parsed = JSON.parse(raw);
+    return {
+      denunciaExtras: parsed?.denunciaExtras || {},
+      sosExtras: parsed?.sosExtras || {},
+      emailsConfig: parsed?.emailsConfig,
+      deletedIds: Array.isArray(parsed?.deletedIds) ? parsed.deletedIds : [],
+      deletedProtocolos: Array.isArray(parsed?.deletedProtocolos) ? parsed.deletedProtocolos : [],
+      updatedAt: parsed?.updatedAt || new Date().toISOString()
+    };
+  } catch {
+    return empty;
+  }
+}
+
+function saveLocalGestaoMetadata(meta: GestaoCloudMetadata): void {
+  try {
+    if (typeof window === 'undefined') return;
+    meta.updatedAt = new Date().toISOString();
+    localStorage.setItem(STORAGE_KEY_GESTAO_METADATA, JSON.stringify(meta));
+  } catch {}
+}
+
+export function updateLocalDenunciaExtraMetadata(
+  id?: string,
+  protocolo?: string,
+  patch?: Partial<DenunciaExtraCloudMetadata>
+): void {
+  if (!patch) return;
+  const meta = getLocalGestaoMetadata();
+  const keys: string[] = [];
+  if (id) keys.push(id);
+  if (protocolo) keys.push(cleanProtocolKey(protocolo));
+
+  keys.forEach(k => {
+    if (!k) return;
+    meta.denunciaExtras[k] = {
+      ...(meta.denunciaExtras[k] || {}),
+      ...patch
+    };
+  });
+
+  saveLocalGestaoMetadata(meta);
+  pushGestaoMetadataToSupabase(meta).catch(() => {});
+}
+
+export async function pushGestaoMetadataToSupabase(customMeta?: GestaoCloudMetadata): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase) return;
+
+  try {
+    const localMeta = customMeta || getLocalGestaoMetadata();
+    const { ids, protocolos } = getDeletedDenunciasRegistry();
+    const mergedDeletedIds = Array.from(new Set([...(localMeta.deletedIds || []), ...Array.from(ids)]));
+    const mergedDeletedProtos = Array.from(new Set([...(localMeta.deletedProtocolos || []), ...Array.from(protocolos)]));
+
+    // Buscar snapshot existente na nuvem para mesclar sem sobrescrever dados de outros dispositivos
+    const { data: existingRow } = await supabase
+      .from('estudantes_gamificacao')
+      .select('stats')
+      .eq('student_seed', SYSTEM_GESTAO_METADATA_SEED)
+      .maybeSingle();
+
+    const cloudStats = (existingRow?.stats || {}) as Partial<GestaoCloudMetadata>;
+    const mergedDenunciaExtras: Record<string, DenunciaExtraCloudMetadata> = {
+      ...(cloudStats.denunciaExtras || {})
+    };
+
+    Object.entries(localMeta.denunciaExtras || {}).forEach(([k, val]) => {
+      mergedDenunciaExtras[k] = {
+        ...(mergedDenunciaExtras[k] || {}),
+        ...val
+      };
+    });
+
+    const mergedSosExtras: Record<string, { escola_id?: string; escola_nome?: string }> = {
+      ...(cloudStats.sosExtras || {}),
+      ...(localMeta.sosExtras || {})
+    };
+
+    const finalPayload: GestaoCloudMetadata = {
+      denunciaExtras: mergedDenunciaExtras,
+      sosExtras: mergedSosExtras,
+      emailsConfig: localMeta.emailsConfig || cloudStats.emailsConfig,
+      deletedIds: Array.from(new Set([...(cloudStats.deletedIds || []), ...mergedDeletedIds])),
+      deletedProtocolos: Array.from(new Set([...(cloudStats.deletedProtocolos || []), ...mergedDeletedProtos])),
+      updatedAt: new Date().toISOString()
+    };
+
+    saveLocalGestaoMetadata(finalPayload);
+
+    await supabase.from('estudantes_gamificacao').upsert({
+      student_seed: SYSTEM_GESTAO_METADATA_SEED,
+      student_code: 'SYS-GESTAO-META',
+      current_level: 1,
+      current_xp: 0,
+      next_level_xp: 100,
+      level_title: 'System Gestao Metadata Store',
+      stats: finalPayload,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'student_seed' });
+  } catch (err) {
+    console.warn('[Supabase Push Gestao Metadata Warn]', err);
+  }
+}
+
+async function fetchGestaoMetadataFromSupabase(): Promise<GestaoCloudMetadata> {
+  const supabase = getSupabase();
+  const localMeta = getLocalGestaoMetadata();
+  if (!supabase) return localMeta;
+
+  try {
+    const { data, error } = await supabase
+      .from('estudantes_gamificacao')
+      .select('stats')
+      .eq('student_seed', SYSTEM_GESTAO_METADATA_SEED)
+      .maybeSingle();
+
+    if (!error && data && data.stats && typeof data.stats === 'object') {
+      const cloudStats = data.stats as Partial<GestaoCloudMetadata>;
+      const mergedDenunciaExtras: Record<string, DenunciaExtraCloudMetadata> = {
+        ...(localMeta.denunciaExtras || {})
+      };
+      Object.entries(cloudStats.denunciaExtras || {}).forEach(([k, val]) => {
+        mergedDenunciaExtras[k] = {
+          ...(mergedDenunciaExtras[k] || {}),
+          ...val
+        };
+      });
+
+      const merged: GestaoCloudMetadata = {
+        denunciaExtras: mergedDenunciaExtras,
+        sosExtras: {
+          ...(localMeta.sosExtras || {}),
+          ...(cloudStats.sosExtras || {})
+        },
+        emailsConfig: cloudStats.emailsConfig || localMeta.emailsConfig,
+        deletedIds: Array.from(new Set([...(localMeta.deletedIds || []), ...(cloudStats.deletedIds || [])])),
+        deletedProtocolos: Array.from(new Set([...(localMeta.deletedProtocolos || []), ...(cloudStats.deletedProtocolos || [])])),
+        updatedAt: cloudStats.updatedAt || new Date().toISOString()
+      };
+
+      // Atualiza tombstones locais se vieram da nuvem
+      merged.deletedIds?.forEach(id => recordDenunciaAsDeleted(id, undefined));
+      merged.deletedProtocolos?.forEach(proto => recordDenunciaAsDeleted(undefined, proto));
+
+      if (merged.emailsConfig && typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('stopbullying_emails_config_v1', JSON.stringify(merged.emailsConfig));
+        } catch {}
+      }
+
+      saveLocalGestaoMetadata(merged);
+      return merged;
+    }
+  } catch (err) {
+    console.warn('[Supabase Fetch Gestao Metadata Warn]', err);
+  }
+  return localMeta;
+}
+
+function hydrateDenunciaRecord(
+  rawDenuncia: any,
+  mediacoesRows: any[],
+  termoRow: any | undefined,
+  checkinsRows: any[],
+  meta: GestaoCloudMetadata,
+  localFallback?: Denuncia
+): Denuncia {
+  const cleanProto = cleanProtocolKey(rawDenuncia.protocolo || '');
+  const extraById = rawDenuncia.id ? meta.denunciaExtras[rawDenuncia.id] : undefined;
+  const extraByProto = cleanProto ? meta.denunciaExtras[cleanProto] : undefined;
+  const extra: DenunciaExtraCloudMetadata = {
+    ...(extraByProto || {}),
+    ...(extraById || {})
+  };
+
+  // 1. Ações de Mediação (mescla banco + local sem duplicar)
+  const dbAcoes: MediacaoAction[] = (mediacoesRows || []).map((m: any) => ({
+    id: m.id,
+    autor: m.autor || 'Coordenação / Mediação',
+    acao: m.acao || '',
+    dataHora: m.data_hora || m.created_at || new Date().toISOString(),
+    categoria: (m.categoria as MediacaoAction['categoria']) || 'Geral'
+  }));
+  const localAcoes = localFallback?.acoes_mediacao || [];
+  const mergedAcoesMap = new Map<string, MediacaoAction>();
+  dbAcoes.forEach(a => mergedAcoesMap.set(`${(a.acao || '').trim()}_${a.autor}`, a));
+  localAcoes.forEach(a => {
+    const key = `${(a.acao || '').trim()}_${a.autor}`;
+    if (!mergedAcoesMap.has(key)) {
+      mergedAcoesMap.set(key, a);
+    }
+  });
+  const acoes_mediacao = Array.from(mergedAcoesMap.values());
+
+  // 2. Termo de Acordo de Convivência
+  let termo_acordo: TermoAcordoConvivencia | undefined = localFallback?.termo_acordo;
+  if (termoRow) {
+    termo_acordo = {
+      mediador: termoRow.mediador || 'Coordenação Pedagógica',
+      compromissos: Array.isArray(termoRow.compromissos) ? termoRow.compromissos : [],
+      reparacao_simbolica: termoRow.reparacao_simbolica || '',
+      status: termoRow.status || 'Em cumprimento',
+      firmado_em: termoRow.firmado_em || termoRow.created_at || new Date().toISOString(),
+      data_revisao: termoRow.data_revisao || undefined
+    };
+  }
+
+  // 3. Check-ins de acompanhamento (7, 15, 30, 60 dias)
+  const dbCheckins: CheckinAcompanhamento[] = (checkinsRows || []).map((c: any) => ({
+    id: c.id,
+    dia: (Number(c.dia) as 7 | 15 | 30 | 60) || 7,
+    responsavel: c.responsavel || 'Comissão de Mediação',
+    status_estudante: c.status_estudante || 'Seguro e Integrado',
+    observacoes: c.observacoes || '',
+    data: c.data || c.created_at || new Date().toISOString()
+  }));
+  const localCheckins = localFallback?.checkins_acompanhamento || [];
+  const mergedCheckinsMap = new Map<string, CheckinAcompanhamento>();
+  dbCheckins.forEach(c => mergedCheckinsMap.set(`${c.dia}_${c.observacoes.trim()}`, c));
+  localCheckins.forEach(c => {
+    const key = `${c.dia}_${c.observacoes.trim()}`;
+    if (!mergedCheckinsMap.has(key)) {
+      mergedCheckinsMap.set(key, c);
+    }
+  });
+  const checkins_acompanhamento = Array.from(mergedCheckinsMap.values());
+
+  // 4. Feedback / Devolutiva Oficial da Escola
+  const feedback_escola = extra.feedback_escola || rawDenuncia.feedback_escola || localFallback?.feedback_escola;
+  const historico_feedbacks = extra.historico_feedbacks || rawDenuncia.historico_feedbacks || localFallback?.historico_feedbacks || (feedback_escola ? [feedback_escola] : undefined);
+  const historico_acoes = extra.historico_acoes || rawDenuncia.historico_acoes || localFallback?.historico_acoes;
+
+  // 5. Campos de Escola e Turma
+  const mergedRaw = {
+    ...localFallback,
+    ...rawDenuncia,
+    escola_id: rawDenuncia.escola_id || extra.escola_id || localFallback?.escola_id,
+    escola_nome: rawDenuncia.escola_nome || extra.escola_nome || localFallback?.escola_nome,
+    escola_ocorrencia_id: rawDenuncia.escola_ocorrencia_id || extra.escola_ocorrencia_id || localFallback?.escola_ocorrencia_id,
+    escola_ocorrencia_nome: rawDenuncia.escola_ocorrencia_nome || extra.escola_ocorrencia_nome || localFallback?.escola_ocorrencia_nome,
+    serie_ocorrencia: rawDenuncia.serie_ocorrencia || extra.serie_ocorrencia || localFallback?.serie_ocorrencia,
+    turma_ocorrencia: rawDenuncia.turma_ocorrencia || extra.turma_ocorrencia || localFallback?.turma_ocorrencia,
+    turno_ocorrencia: rawDenuncia.turno_ocorrencia || extra.turno_ocorrencia || localFallback?.turno_ocorrencia,
+    escola_acusado_id: rawDenuncia.escola_acusado_id || extra.escola_acusado_id || localFallback?.escola_acusado_id,
+    escola_acusado_nome: rawDenuncia.escola_acusado_nome || extra.escola_acusado_nome || localFallback?.escola_acusado_nome,
+    serie_acusado: rawDenuncia.serie_acusado || extra.serie_acusado || localFallback?.serie_acusado,
+    turma_acusado: rawDenuncia.turma_acusado || extra.turma_acusado || localFallback?.turma_acusado,
+    turno_acusado: rawDenuncia.turno_acusado || extra.turno_acusado || localFallback?.turno_acusado,
+    agressor_grupo: rawDenuncia.agressor_grupo || extra.agressor_grupo || localFallback?.agressor_grupo,
+    acoes_mediacao,
+    termo_acordo,
+    checkins_acompanhamento,
+    feedback_escola,
+    historico_feedbacks,
+    historico_acoes
+  };
+
+  return normalizeDenunciaSchool(mergedRaw);
+}
+
+//Sincronização bidirecional completa com o Supabase PostgreSQL:
+// Puxa todas as informações postadas pelo Painel de Gestão (denúncias, ações de mediação,
+// termos de acordo, check-ins 7/15/30/60d, devolutivas oficiais, alertas SOS, mensagens de chat,
+// e-mails institucionais, logs de auditoria e perfis de escolas) e envia eventuais pendências locais.
 export async function syncFromSupabase(managementSessionToken?: string): Promise<void> {
   const supabase = getSupabase();
   if (!supabase) return;
 
   try {
+    // 0. Sincronizar perfis de escolas e escola ativa primeiro
+    await syncEscolasFromSupabase().catch(() => {});
+
+    // 1. Puxar metadados de gestão na nuvem (feedbacks, vínculos de escola, e-mails, exclusões)
+    const cloudMeta = await fetchGestaoMetadataFromSupabase();
+
+    // Preservar estado local antes da sincronização para reconciliação sem perda
+    const localDenuncias = getDenuncias();
+    const localDenunciasById = new Map<string, Denuncia>();
+    const localDenunciasByProto = new Map<string, Denuncia>();
+    localDenuncias.forEach(d => {
+      if (d.id) localDenunciasById.set(d.id, d);
+      if (d.protocolo) localDenunciasByProto.set(cleanProtocolKey(d.protocolo), d);
+    });
+
     let dbDenuncias: any[] | null = null;
     const sessionToken = managementSessionToken || getGestaoSessionToken();
 
-    // 1. Tentar via RPC autenticada da gestão se o token de sessão for fornecido
+    // 2. Tentar via RPC autenticada da gestão se o token de sessão for fornecido
     if (sessionToken) {
       const { data: rpcRes, error: rpcErr } = await supabase.rpc('gestao_autenticar_e_listar_denuncias', {
         p_session_token: sessionToken
@@ -240,7 +591,7 @@ export async function syncFromSupabase(managementSessionToken?: string): Promise
       }
     }
 
-    // 2. Fallback direto se a RPC ainda não estiver criada no banco
+    // 3. Fallback direto para a tabela denuncias
     if (!dbDenuncias) {
       const { data: directDenuncias, error } = await supabase
         .from('denuncias')
@@ -253,8 +604,106 @@ export async function syncFromSupabase(managementSessionToken?: string): Promise
       }
     }
 
+    // 4. Buscar todas as tabelas relacionais do Painel de Gestão em paralelo
+    const [
+      mediacoesRes,
+      termosRes,
+      checkinsRes,
+      msgsRes,
+      logsRes
+    ] = await Promise.all([
+      supabase.from('mediacoes_acoes').select('*').order('data_hora', { ascending: true }),
+      supabase.from('termos_acordo_convivencia').select('*'),
+      supabase.from('checkins_acompanhamento').select('*').order('data', { ascending: true }),
+      supabase.from('protocolo_mensagens').select('*').order('created_at', { ascending: true }),
+      supabase.from('auditoria_logs').select('*').order('created_at', { ascending: false }).limit(100)
+    ]);
+
+    const dbMediacoes: any[] = (!mediacoesRes.error && Array.isArray(mediacoesRes.data)) ? mediacoesRes.data : [];
+    const dbTermos: any[] = (!termosRes.error && Array.isArray(termosRes.data)) ? termosRes.data : [];
+    const dbCheckins: any[] = (!checkinsRes.error && Array.isArray(checkinsRes.data)) ? checkinsRes.data : [];
+    const dbMsgs: any[] = (!msgsRes.error && Array.isArray(msgsRes.data)) ? msgsRes.data : [];
+    const dbLogs: any[] = (!logsRes.error && Array.isArray(logsRes.data)) ? logsRes.data : [];
+
+    // Agrupar tabelas relacionais por denuncia_id
+    const mediacoesByDenuncia = new Map<string, any[]>();
+    dbMediacoes.forEach(m => {
+      if (!m.denuncia_id) return;
+      const arr = mediacoesByDenuncia.get(m.denuncia_id) || [];
+      arr.push(m);
+      mediacoesByDenuncia.set(m.denuncia_id, arr);
+    });
+
+    const termoByDenuncia = new Map<string, any>();
+    dbTermos.forEach(t => {
+      if (t.denuncia_id) termoByDenuncia.set(t.denuncia_id, t);
+    });
+
+    const checkinsByDenuncia = new Map<string, any[]>();
+    dbCheckins.forEach(c => {
+      if (!c.denuncia_id) return;
+      const arr = checkinsByDenuncia.get(c.denuncia_id) || [];
+      arr.push(c);
+      checkinsByDenuncia.set(c.denuncia_id, arr);
+    });
+
     if (Array.isArray(dbDenuncias)) {
-      const active = filterActiveDenuncias(dbDenuncias);
+      const hydratedList: Denuncia[] = dbDenuncias.map(raw => {
+        const cleanProto = cleanProtocolKey(raw.protocolo || '');
+        const localMatch = localDenunciasById.get(raw.id) || localDenunciasByProto.get(cleanProto);
+        return hydrateDenunciaRecord(
+          raw,
+          mediacoesByDenuncia.get(raw.id) || [],
+          termoByDenuncia.get(raw.id),
+          checkinsByDenuncia.get(raw.id) || [],
+          cloudMeta,
+          localMatch
+        );
+      });
+
+      // Verificar se há denúncias locais recém-criadas que ainda não subiram para a nuvem
+      const cloudIds = new Set(dbDenuncias.map(d => d.id));
+      const cloudProtos = new Set(dbDenuncias.map(d => cleanProtocolKey(d.protocolo || '')));
+      let needsMetadataPush = false;
+
+      for (const localD of localDenuncias) {
+        const cleanP = cleanProtocolKey(localD.protocolo);
+        if (!isDenunciaDeleted(localD.id, localD.protocolo)) {
+          if (!cloudIds.has(localD.id) && !cloudProtos.has(cleanP)) {
+            hydratedList.unshift(localD);
+            // Enviar para o Supabase em background
+            pushSingleDenunciaToSupabase(localD).catch(() => {});
+          }
+
+          // Reconciliar dados locais do Painel de Gestão que ainda não estavam na nuvem
+          if (localD.feedback_escola || localD.escola_ocorrencia_id) {
+            const existingExtra = cloudMeta.denunciaExtras[localD.id] || {};
+            if (
+              (localD.feedback_escola && !existingExtra.feedback_escola) ||
+              (localD.escola_ocorrencia_id && !existingExtra.escola_ocorrencia_id)
+            ) {
+              cloudMeta.denunciaExtras[localD.id] = {
+                ...existingExtra,
+                feedback_escola: localD.feedback_escola || existingExtra.feedback_escola,
+                historico_feedbacks: localD.historico_feedbacks || existingExtra.historico_feedbacks,
+                historico_acoes: localD.historico_acoes || existingExtra.historico_acoes,
+                escola_id: localD.escola_id || existingExtra.escola_id,
+                escola_nome: localD.escola_nome || existingExtra.escola_nome,
+                escola_ocorrencia_id: localD.escola_ocorrencia_id || existingExtra.escola_ocorrencia_id,
+                escola_ocorrencia_nome: localD.escola_ocorrencia_nome || existingExtra.escola_ocorrencia_nome
+              };
+              cloudMeta.denunciaExtras[cleanP] = cloudMeta.denunciaExtras[localD.id];
+              needsMetadataPush = true;
+            }
+          }
+        }
+      }
+
+      if (needsMetadataPush) {
+        pushGestaoMetadataToSupabase(cloudMeta).catch(() => {});
+      }
+
+      const active = filterActiveDenuncias(hydratedList);
       localStorage.setItem(STORAGE_KEY_DENUNCIAS, JSON.stringify(active));
       notifyStorageUpdated();
 
@@ -271,6 +720,7 @@ export async function syncFromSupabase(managementSessionToken?: string): Promise
       }
     }
 
+    // 5. Sincronizar Alertas SOS
     let dbSOS: any[] | null = null;
     if (sessionToken) {
       const { data: rpcSos, error: rpcSosErr } = await supabase.rpc('gestao_listar_sos_alertas', {
@@ -293,21 +743,27 @@ export async function syncFromSupabase(managementSessionToken?: string): Promise
     }
 
     if (Array.isArray(dbSOS)) {
-      localStorage.setItem(STORAGE_KEY_SOS, JSON.stringify(dbSOS));
+      const escolaAtiva = getEscolaAtiva();
+      const hydratedSOS: SOSAlert[] = dbSOS.map((s: any) => {
+        const extraSos = cloudMeta.sosExtras[s.id];
+        return {
+          ...s,
+          escola_id: s.escola_id || extraSos?.escola_id || escolaAtiva.id,
+          escola_nome: s.escola_nome || extraSos?.escola_nome || escolaAtiva.nome
+        };
+      });
+      localStorage.setItem(STORAGE_KEY_SOS, JSON.stringify(hydratedSOS));
       notifyStorageUpdated();
     }
 
-    const { data: dbMsgs, error: msgsError } = await supabase
-      .from('protocolo_mensagens')
-      .select('*')
-      .order('created_at', { ascending: true });
-
-    if (!msgsError && Array.isArray(dbMsgs)) {
+    // 6. Sincronizar Mensagens do Chat de Protocolos
+    if (dbMsgs.length > 0) {
       const raw = localStorage.getItem(STORAGE_KEY_PROTOCOL_CHATS);
       const chats: Record<string, ProtocolChatMessage[]> = raw ? JSON.parse(raw) : {};
 
       dbMsgs.forEach((m: any) => {
         const clean = cleanProtocolKey(m.protocolo);
+        if (!clean) return;
         if (!chats[clean]) chats[clean] = [];
         const exists = chats[clean].some(existing => existing.id === m.id);
         if (!exists) {
@@ -327,8 +783,15 @@ export async function syncFromSupabase(managementSessionToken?: string): Promise
       }
     }
 
-    // 4. Sincronização dos Perfis de Escolas Cadastradas
-    await syncEscolasFromSupabase().catch(() => {});
+    // 7. Sincronizar Logs de Auditoria da Gestão
+    if (dbLogs.length > 0) {
+      const formattedLogs = dbLogs.map((l: any) => ({
+        type: l.tipo || 'SISTEMA',
+        detail: l.detalhes || '',
+        timestamp: l.created_at || new Date().toISOString()
+      }));
+      localStorage.setItem(STORAGE_KEY_LOGS, JSON.stringify(formattedLogs));
+    }
   } catch (err) {
     console.warn('[Supabase Sync]', err);
   }
@@ -356,6 +819,54 @@ export const getDenuncias = (): Denuncia[] => {
     return [];
   }
 };
+
+function buildSafeDenunciaDbPayload(nova: Denuncia): Record<string, any> {
+  const hasSchoolHeader = (nova.descricao || '').includes('[Instituição de Ensino:');
+  const embeddedDesc = hasSchoolHeader
+    ? nova.descricao
+    : `[Instituição de Ensino: ${nova.escola_nome || 'E.E.M.T.I. Alfredo Machado'} (ID: ${nova.escola_id || 'escola-eemti-alfredo-machado'})]\n\n${nova.descricao}`;
+
+  return {
+    id: nova.id,
+    protocolo: nova.protocolo,
+    tipo_violencia: nova.tipo_violencia,
+    tipos_selecionados: nova.tipos_selecionados || [],
+    local_escola: nova.local_escola,
+    turno: nova.turno || 'Manhã',
+    frequencia: nova.frequencia || 'Poucas vezes',
+    papel_denunciante: nova.papel_denunciante || 'Sou a Vítima',
+    turma_envolvida: nova.turma_envolvida || null,
+    descricao: embeddedDesc,
+    link_cyberbullying: nova.link_cyberbullying || null,
+    midia_anexa: nova.midia_anexa || null,
+    midia_tipo: nova.midia_tipo || null,
+    midia_duracao: nova.midia_duracao || 0,
+    provas_anexas: nova.provas_anexas || [],
+    nivel_gravidade: nova.nivel_gravidade || 'Pendente',
+    nivel_escalada: nova.nivel_escalada || 'Média',
+    is_sos: Boolean(nova.is_sos),
+    status: nova.status || 'Em Análise',
+    etapa_mediacao: nova.etapa_mediacao || 'escuta_inicial',
+    impactos_identificados: nova.impactos_identificados || [],
+    medidas_protecao: nova.medidas_protecao || [],
+    data_envio: nova.data_envio
+  };
+}
+
+async function pushSingleDenunciaToSupabase(nova: Denuncia): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase) return;
+
+  try {
+    const safePayload = buildSafeDenunciaDbPayload(nova);
+    const { error } = await supabase.from('denuncias').upsert(safePayload, { onConflict: 'id' });
+    if (error) {
+      await supabase.from('denuncias').insert(safePayload);
+    }
+  } catch (err) {
+    console.warn('[Supabase pushSingleDenunciaToSupabase Warn]', err);
+  }
+}
 
 export const saveDenuncia = (denuncia: Omit<Denuncia, 'id' | 'data_envio' | 'status'> & { id?: string }): Denuncia => {
   const list = getDenuncias();
@@ -386,86 +897,25 @@ export const saveDenuncia = (denuncia: Omit<Denuncia, 'id' | 'data_envio' | 'sta
   addLog('DENUNCIA_CRIADA', `Protocolo ${nova.protocolo} • ${nova.escola_nome}`);
   setLastCreatedProtocol(nova.protocolo);
 
-  // Sincronização com Supabase (Resiliente e adaptativa)
-  const supabase = getSupabase();
-  if (supabase) {
-    const fullPayload: any = {
-      id: nova.id,
-      protocolo: nova.protocolo,
-      tipo_violencia: nova.tipo_violencia,
-      tipos_selecionados: nova.tipos_selecionados || [],
-      local_escola: nova.local_escola,
-      turno: nova.turno || 'Manhã',
-      frequencia: nova.frequencia || 'Poucas vezes',
-      papel_denunciante: nova.papel_denunciante || 'Sou a Vítima',
-      turma_envolvida: nova.turma_envolvida || null,
-      agressor_grupo: nova.agressor_grupo || null,
-      descricao: nova.descricao,
-      link_cyberbullying: nova.link_cyberbullying || null,
-      midia_anexa: nova.midia_anexa || null,
-      midia_tipo: nova.midia_tipo || null,
-      midia_duracao: nova.midia_duracao || 0,
-      provas_anexas: nova.provas_anexas || [],
-      nivel_gravidade: nova.nivel_gravidade || 'Pendente',
-      nivel_escalada: nova.nivel_escalada || 'Média',
-      is_sos: Boolean(nova.is_sos),
-      status: nova.status,
-      etapa_mediacao: nova.etapa_mediacao || 'escuta_inicial',
-      impactos_identificados: nova.impactos_identificados || [],
-      medidas_protecao: nova.medidas_protecao || [],
-      escola_id: nova.escola_id || null,
-      escola_nome: nova.escola_nome || null,
-      escola_ocorrencia_id: nova.escola_ocorrencia_id || null,
-      escola_ocorrencia_nome: nova.escola_ocorrencia_nome || null,
-      serie_ocorrencia: nova.serie_ocorrencia || null,
-      turma_ocorrencia: nova.turma_ocorrencia || null,
-      turno_ocorrencia: nova.turno_ocorrencia || null,
-      escola_acusado_id: nova.escola_acusado_id || null,
-      escola_acusado_nome: nova.escola_acusado_nome || null,
-      serie_acusado: nova.serie_acusado || null,
-      turma_acusado: nova.turma_acusado || null,
-      turno_acusado: nova.turno_acusado || null,
-      data_envio: nova.data_envio
-    };
+  // Salva metadados complementares da escola e turma na nuvem
+  updateLocalDenunciaExtraMetadata(nova.id, nova.protocolo, {
+    escola_id: nova.escola_id,
+    escola_nome: nova.escola_nome,
+    escola_ocorrencia_id: nova.escola_ocorrencia_id,
+    escola_ocorrencia_nome: nova.escola_ocorrencia_nome,
+    serie_ocorrencia: nova.serie_ocorrencia,
+    turma_ocorrencia: nova.turma_ocorrencia,
+    turno_ocorrencia: nova.turno_ocorrencia,
+    escola_acusado_id: nova.escola_acusado_id,
+    escola_acusado_nome: nova.escola_acusado_nome,
+    serie_acusado: nova.serie_acusado,
+    turma_acusado: nova.turma_acusado,
+    turno_acusado: nova.turno_acusado,
+    agressor_grupo: nova.agressor_grupo
+  });
 
-    (async () => {
-      try {
-        const { error } = await supabase.from('denuncias').insert(fullPayload);
-        if (error) {
-          console.warn('[Supabase Insert Inicial Warning]', error.message);
-          // Se a coluna escola_id ainda não foi criada no banco remoto Supabase
-          if (error.code === 'PGRST204' || error.message?.includes('column')) {
-            const embeddedDesc = `[Instituição de Ensino: ${nova.escola_nome || 'E.E.M.T.I. Alfredo Machado'} (ID: ${nova.escola_id || 'escola-eemti-alfredo-machado'})]\n\n${nova.descricao}`;
-            const safePayload = {
-              id: nova.id,
-              protocolo: nova.protocolo,
-              tipo_violencia: nova.tipo_violencia,
-              local_escola: nova.local_escola,
-              descricao: embeddedDesc,
-              status: nova.status || 'Em Análise',
-              turno: nova.turno || 'Manhã',
-              frequencia: nova.frequencia || 'Poucas vezes',
-              papel_denunciante: nova.papel_denunciante || 'Sou a Vítima',
-              turma_envolvida: nova.turma_envolvida || null,
-              nivel_gravidade: nova.nivel_gravidade || 'Pendente',
-              nivel_escalada: nova.nivel_escalada || 'Média',
-              is_sos: Boolean(nova.is_sos),
-              tipos_selecionados: nova.tipos_selecionados || [],
-              data_envio: nova.data_envio
-            };
-            const retryRes = await supabase.from('denuncias').insert(safePayload);
-            if (!retryRes.error) {
-              console.log('[Supabase Safe Fallback Inserido]', nova.protocolo);
-            } else {
-              console.warn('[Supabase Safe Fallback Error]', retryRes.error.message);
-            }
-          }
-        }
-      } catch (err) {
-        console.warn('[Supabase Insert Exception]', err);
-      }
-    })();
-  }
+  // Sincronização direta com a tabela denuncias no Supabase
+  pushSingleDenunciaToSupabase(nova).catch(() => {});
 
   return nova;
 };
@@ -474,75 +924,7 @@ export const saveDenunciaAsync = async (
   denuncia: Omit<Denuncia, 'id' | 'data_envio' | 'status'> & { id?: string }
 ): Promise<Denuncia> => {
   const nova = saveDenuncia(denuncia);
-  const supabase = getSupabase();
-  if (supabase) {
-    try {
-      const fullPayload: any = {
-        id: nova.id,
-        protocolo: nova.protocolo,
-        tipo_violencia: nova.tipo_violencia,
-        tipos_selecionados: nova.tipos_selecionados || [],
-        local_escola: nova.local_escola,
-        turno: nova.turno || 'Manhã',
-        frequencia: nova.frequencia || 'Poucas vezes',
-        papel_denunciante: nova.papel_denunciante || 'Sou a Vítima',
-        turma_envolvida: nova.turma_envolvida || null,
-        agressor_grupo: nova.agressor_grupo || null,
-        descricao: nova.descricao,
-        link_cyberbullying: nova.link_cyberbullying || null,
-        midia_anexa: nova.midia_anexa || null,
-        midia_tipo: nova.midia_tipo || null,
-        midia_duracao: nova.midia_duracao || 0,
-        provas_anexas: nova.provas_anexas || [],
-        nivel_gravidade: nova.nivel_gravidade || 'Pendente',
-        nivel_escalada: nova.nivel_escalada || 'Média',
-        is_sos: Boolean(nova.is_sos),
-        status: nova.status,
-        etapa_mediacao: nova.etapa_mediacao || 'escuta_inicial',
-        impactos_identificados: nova.impactos_identificados || [],
-        medidas_protecao: nova.medidas_protecao || [],
-        escola_id: nova.escola_id || null,
-        escola_nome: nova.escola_nome || null,
-        escola_ocorrencia_id: nova.escola_ocorrencia_id || null,
-        escola_ocorrencia_nome: nova.escola_ocorrencia_nome || null,
-        serie_ocorrencia: nova.serie_ocorrencia || null,
-        turma_ocorrencia: nova.turma_ocorrencia || null,
-        turno_ocorrencia: nova.turno_ocorrencia || null,
-        escola_acusado_id: nova.escola_acusado_id || null,
-        escola_acusado_nome: nova.escola_acusado_nome || null,
-        serie_acusado: nova.serie_acusado || null,
-        turma_acusado: nova.turma_acusado || null,
-        turno_acusado: nova.turno_acusado || null,
-        data_envio: nova.data_envio
-      };
-
-      const { error } = await supabase.from('denuncias').insert(fullPayload);
-      if (error) {
-        console.warn('[Supabase Insert Inicial Warning]', error.message);
-        const embeddedDesc = `[Instituição de Ensino: ${nova.escola_nome || 'E.E.M.T.I. Alfredo Machado'} (ID: ${nova.escola_id || 'escola-eemti-alfredo-machado'})]\n\n${nova.descricao}`;
-        const safePayload = {
-          id: nova.id,
-          protocolo: nova.protocolo,
-          tipo_violencia: nova.tipo_violencia,
-          local_escola: nova.local_escola,
-          descricao: embeddedDesc,
-          status: nova.status || 'Em Análise',
-          turno: nova.turno || 'Manhã',
-          frequencia: nova.frequencia || 'Poucas vezes',
-          papel_denunciante: nova.papel_denunciante || 'Sou a Vítima',
-          turma_envolvida: nova.turma_envolvida || null,
-          nivel_gravidade: nova.nivel_gravidade || 'Pendente',
-          nivel_escalada: nova.nivel_escalada || 'Média',
-          is_sos: Boolean(nova.is_sos),
-          tipos_selecionados: nova.tipos_selecionados || [],
-          data_envio: nova.data_envio
-        };
-        await supabase.from('denuncias').insert(safePayload);
-      }
-    } catch (err) {
-      console.warn('[Supabase saveDenunciaAsync Exception]', err);
-    }
-  }
+  await pushSingleDenunciaToSupabase(nova);
   return nova;
 };
 
@@ -574,54 +956,72 @@ export const getDenunciaByProtocolo = (protocolo: string): Denuncia | undefined 
 export async function fetchDenunciaByProtocoloFromCloud(protocolo: string): Promise<Denuncia | null> {
   const clean = cleanProtocolKey(protocolo);
   if (!clean) return null;
+  if (isDenunciaDeleted(undefined, clean)) return null;
   const supabase = getSupabase();
-  if (!supabase) return null;
+  if (!supabase) return getDenunciaByProtocolo(clean) || null;
 
   try {
-    // 1. Tentar RPC segura com rate limiting no servidor
+    let rawDenuncia: any = null;
+
+    // 1. Tentar RPC segura se disponível
     const { data: rpcData, error: rpcErr } = await supabase.rpc('consultar_denuncia_protocolo', {
       p_protocolo: clean
     });
 
     if (!rpcErr && rpcData && rpcData.found && rpcData.denuncia) {
-      const item = normalizeDenunciaSchool(rpcData.denuncia as Denuncia);
-      const currentList = getDenuncias();
-      const exists = currentList.some(d => cleanProtocolKey(d.protocolo) === clean);
-      if (!exists) {
-        currentList.unshift(item);
-        try {
-          localStorage.setItem(STORAGE_KEY_DENUNCIAS, JSON.stringify(currentList));
-          notifyStorageUpdated();
-        } catch {}
-      }
-      return item;
+      rawDenuncia = rpcData.denuncia;
     }
 
-    // 2. Fallback direto se a RPC ainda não estiver criada no banco
-    const { data, error } = await supabase
-      .from('denuncias')
-      .select('*')
-      .or(`protocolo.eq.${clean},protocolo.eq.#${clean}`)
-      .limit(1);
+    // 2. Fallback direto na tabela denuncias
+    if (!rawDenuncia) {
+      const { data, error } = await supabase
+        .from('denuncias')
+        .select('*')
+        .or(`protocolo.eq.${clean},protocolo.eq.#${clean}`)
+        .limit(1);
 
-    if (!error && Array.isArray(data) && data.length > 0) {
-      const item = normalizeDenunciaSchool(data[0] as Denuncia);
-      const currentList = getDenuncias();
-      const exists = currentList.some(d => cleanProtocolKey(d.protocolo) === clean);
-      if (!exists) {
-        currentList.unshift(item);
-        try {
-          localStorage.setItem(STORAGE_KEY_DENUNCIAS, JSON.stringify(currentList));
-          notifyStorageUpdated();
-        } catch {}
+      if (!error && Array.isArray(data) && data.length > 0) {
+        rawDenuncia = data[0];
       }
-      return item;
+    }
+
+    if (rawDenuncia && rawDenuncia.status !== 'Excluído') {
+      // Buscar todas as informações postadas pelo Painel de Gestão para este protocolo
+      const [cloudMeta, medRes, termoRes, chkRes] = await Promise.all([
+        fetchGestaoMetadataFromSupabase(),
+        supabase.from('mediacoes_acoes').select('*').eq('denuncia_id', rawDenuncia.id).order('data_hora', { ascending: true }),
+        supabase.from('termos_acordo_convivencia').select('*').eq('denuncia_id', rawDenuncia.id).maybeSingle(),
+        supabase.from('checkins_acompanhamento').select('*').eq('denuncia_id', rawDenuncia.id).order('data', { ascending: true })
+      ]);
+
+      const currentList = getDenuncias();
+      const existingLocal = currentList.find(d => cleanProtocolKey(d.protocolo) === clean || d.id === rawDenuncia.id);
+
+      const hydratedItem = hydrateDenunciaRecord(
+        rawDenuncia,
+        (!medRes.error && Array.isArray(medRes.data)) ? medRes.data : [],
+        !termoRes.error ? termoRes.data : undefined,
+        (!chkRes.error && Array.isArray(chkRes.data)) ? chkRes.data : [],
+        cloudMeta,
+        existingLocal
+      );
+
+      const updatedList = existingLocal
+        ? currentList.map(d => (d.id === hydratedItem.id || cleanProtocolKey(d.protocolo) === clean) ? hydratedItem : d)
+        : [hydratedItem, ...currentList];
+
+      try {
+        localStorage.setItem(STORAGE_KEY_DENUNCIAS, JSON.stringify(updatedList));
+        notifyStorageUpdated();
+      } catch {}
+
+      return hydratedItem;
     }
   } catch (err) {
     console.warn('[Fetch Denuncia Protocolo Error]', err);
   }
 
-  return null;
+  return getDenunciaByProtocolo(clean) || null;
 }
 
 export const getProtocolMessages = (protocolo: string): ProtocolChatMessage[] => {
@@ -810,9 +1210,18 @@ export const saveSOSAlert = (alertData: Omit<SOSAlert, 'id' | 'data_disparo' | '
   } catch {}
   addLog('SOS_DISPARO', `Lat: ${alertData.latitude}, Lng: ${alertData.longitude} • ${novo.escola_nome}`);
 
+  // Persistir vínculo da escola do alerta SOS nos metadados da nuvem
+  const meta = getLocalGestaoMetadata();
+  meta.sosExtras[novo.id] = {
+    escola_id: novo.escola_id,
+    escola_nome: novo.escola_nome
+  };
+  saveLocalGestaoMetadata(meta);
+  pushGestaoMetadataToSupabase(meta).catch(() => {});
+
   const supabase = getSupabase();
   if (supabase) {
-    safeSupabaseExec(() => supabase.from('sos_alertas').insert({
+    safeSupabaseExec(() => supabase.from('sos_alertas').upsert({
       id: novo.id,
       latitude: novo.latitude,
       longitude: novo.longitude,
@@ -820,10 +1229,8 @@ export const saveSOSAlert = (alertData: Omit<SOSAlert, 'id' | 'data_disparo' | '
       dispositivo_info: novo.dispositivo_info,
       local_aproximado: novo.local_aproximado,
       status: novo.status,
-      escola_id: novo.escola_id || null,
-      escola_nome: novo.escola_nome || null,
       data_disparo: novo.data_disparo
-    }));
+    }, { onConflict: 'id' }));
   }
 
   return novo;
@@ -836,7 +1243,7 @@ export const saveSOSAlertAsync = async (
   const supabase = getSupabase();
   if (supabase) {
     try {
-      const { error } = await supabase.from('sos_alertas').insert({
+      await supabase.from('sos_alertas').upsert({
         id: novo.id,
         latitude: novo.latitude,
         longitude: novo.longitude,
@@ -844,22 +1251,8 @@ export const saveSOSAlertAsync = async (
         dispositivo_info: novo.dispositivo_info,
         local_aproximado: novo.local_aproximado,
         status: novo.status,
-        escola_id: novo.escola_id || null,
-        escola_nome: novo.escola_nome || null,
         data_disparo: novo.data_disparo
-      });
-      if (error && (error.code === 'PGRST204' || error.message?.includes('column'))) {
-        await supabase.from('sos_alertas').insert({
-          id: novo.id,
-          latitude: novo.latitude,
-          longitude: novo.longitude,
-          precisao_metros: novo.precisao_metros,
-          dispositivo_info: novo.dispositivo_info,
-          local_aproximado: novo.local_aproximado,
-          status: novo.status,
-          data_disparo: novo.data_disparo
-        });
-      }
+      }, { onConflict: 'id' });
     } catch (err) {
       console.warn('[Supabase saveSOSAlertAsync Warn]', err);
     }
@@ -1002,16 +1395,20 @@ export const addMediacaoAction = (
 ): Denuncia[] => {
   const list = getDenuncias();
   const novaAcao: MediacaoAction = {
-    id: 'med-' + Math.random().toString(36).substring(2, 9),
+    id: generateUUID(),
     autor,
     acao: acao.trim(),
     dataHora: new Date().toISOString(),
     categoria
   };
 
+  let statusChangedToAcolhido = false;
   const updated = list.map(d => {
     if (d.id === denunciaId) {
       const acoes = d.acoes_mediacao || [];
+      if (d.status === 'Em Análise') {
+        statusChangedToAcolhido = true;
+      }
       return {
         ...d,
         acoes_mediacao: [...acoes, novaAcao],
@@ -1023,17 +1420,23 @@ export const addMediacaoAction = (
 
   try {
     localStorage.setItem(STORAGE_KEY_DENUNCIAS, JSON.stringify(updated));
+    notifyStorageUpdated();
   } catch {}
   addLog('MED_ACAO_REGISTRADA', `Denúncia ID ${denunciaId}: ${categoria} - ${acao.slice(0, 40)}`);
 
   const supabase = getSupabase();
   if (supabase) {
     safeSupabaseExec(() => supabase.from('mediacoes_acoes').insert({
+      id: novaAcao.id,
       denuncia_id: denunciaId,
       autor,
       categoria,
-      acao: acao.trim()
+      acao: acao.trim(),
+      data_hora: novaAcao.dataHora
     }));
+    if (statusChangedToAcolhido) {
+      safeSupabaseExec(() => supabase.from('denuncias').update({ status: 'Acolhido' }).eq('id', denunciaId));
+    }
   }
 
   return updated;
@@ -1050,6 +1453,7 @@ export const toggleDenunciaSOS = (denunciaId: string, forcedValue?: boolean): De
   });
   try {
     localStorage.setItem(STORAGE_KEY_DENUNCIAS, JSON.stringify(updated));
+    notifyStorageUpdated();
   } catch {}
   addLog('DENUNCIA_SOS_TOGGLE', `Denúncia ID ${denunciaId}`);
 
@@ -1069,20 +1473,41 @@ export const updateDenunciaMediacao = (
   partial: Partial<Denuncia>
 ): Denuncia[] => {
   const list = getDenuncias();
+  let targetProtocol: string | undefined;
   const updated = list.map(d => {
     if (d.id === denunciaId) {
+      targetProtocol = d.protocolo;
       return { ...d, ...partial };
     }
     return d;
   });
   try {
     localStorage.setItem(STORAGE_KEY_DENUNCIAS, JSON.stringify(updated));
+    notifyStorageUpdated();
   } catch {}
   addLog('MED_DADOS_ATUALIZADOS', `Denúncia ID ${denunciaId} atualizada com dados de mediação`);
 
+  // Filtrar colunas válidas da tabela denuncias no Supabase
+  const dbPartial: Record<string, any> = {};
+  const extraPatch: Partial<DenunciaExtraCloudMetadata> = {};
+  let hasExtra = false;
+
+  Object.entries(partial).forEach(([key, value]) => {
+    if (VALID_DENUNCIA_DB_COLUMNS.has(key)) {
+      dbPartial[key] = value;
+    } else if (key !== 'acoes_mediacao' && key !== 'termo_acordo' && key !== 'checkins_acompanhamento') {
+      (extraPatch as any)[key] = value;
+      hasExtra = true;
+    }
+  });
+
+  if (hasExtra) {
+    updateLocalDenunciaExtraMetadata(denunciaId, targetProtocol, extraPatch);
+  }
+
   const supabase = getSupabase();
-  if (supabase) {
-    safeSupabaseExec(() => supabase.from('denuncias').update(partial).eq('id', denunciaId));
+  if (supabase && Object.keys(dbPartial).length > 0) {
+    safeSupabaseExec(() => supabase.from('denuncias').update(dbPartial).eq('id', denunciaId));
   }
 
   return updated;
@@ -1106,6 +1531,7 @@ export const salvarTermoAcordo = (
   });
   try {
     localStorage.setItem(STORAGE_KEY_DENUNCIAS, JSON.stringify(updated));
+    notifyStorageUpdated();
   } catch {}
   addLog('TERMO_ACORDO_FIRMADO', `Acordo formalizado na denúncia ${denunciaId}`);
 
@@ -1117,8 +1543,14 @@ export const salvarTermoAcordo = (
       compromissos: termo.compromissos,
       reparacao_simbolica: termo.reparacao_simbolica,
       status: termo.status,
-      data_revisao: termo.data_revisao
-    }));
+      firmado_em: termo.firmado_em || new Date().toISOString(),
+      data_revisao: termo.data_revisao || null
+    }, { onConflict: 'denuncia_id' }));
+
+    safeSupabaseExec(() => supabase.from('denuncias').update({
+      etapa_mediacao: 'acordo_firmado',
+      status: 'Acolhido'
+    }).eq('id', denunciaId));
   }
 
   return updated;
@@ -1131,7 +1563,7 @@ export const addCheckinAcompanhamento = (
   const list = getDenuncias();
   const novo: CheckinAcompanhamento = {
     ...checkin,
-    id: 'chk-' + Math.random().toString(36).substring(2, 9),
+    id: generateUUID(),
     data: new Date().toISOString()
   };
 
@@ -1149,18 +1581,25 @@ export const addCheckinAcompanhamento = (
 
   try {
     localStorage.setItem(STORAGE_KEY_DENUNCIAS, JSON.stringify(updated));
+    notifyStorageUpdated();
   } catch {}
   addLog('CHECKIN_ACOMPANHAMENTO', `Checkin ${checkin.dia}d registrado na denúncia ${denunciaId}`);
 
   const supabase = getSupabase();
   if (supabase) {
     safeSupabaseExec(() => supabase.from('checkins_acompanhamento').insert({
+      id: novo.id,
       denuncia_id: denunciaId,
       dia: checkin.dia,
       responsavel: checkin.responsavel,
       status_estudante: checkin.status_estudante,
-      observacoes: checkin.observacoes
+      observacoes: checkin.observacoes,
+      data: novo.data
     }));
+
+    safeSupabaseExec(() => supabase.from('denuncias').update({
+      etapa_mediacao: 'monitoramento'
+    }).eq('id', denunciaId));
   }
 
   return updated;
@@ -1175,16 +1614,20 @@ export const salvarFeedbackEscola = (
   const agora = new Date().toISOString();
   const feedbackCompleto: FeedbackEscola = {
     ...feedbackData,
-    id: feedbackData.id || ('fb-' + Math.random().toString(36).substring(2, 9)),
+    id: feedbackData.id || generateUUID(),
     data_hora: feedbackData.data_hora || agora,
     notificado_ao_conselho_tutelar: feedbackData.notificado_ao_conselho_tutelar ?? true,
     notificado_ao_conselho_escolar: feedbackData.notificado_ao_conselho_escolar ?? true
   };
 
+  let targetId = denunciaId;
   let targetProtocol: string | undefined;
+  let nextHistoricoFeedbacks: FeedbackEscola[] = [feedbackCompleto];
+  let nextHistoricoAcoes: { data_hora: string; acao: string; responsavel: string }[] = [];
 
   const updated = list.map(d => {
     if (d.id === denunciaId || d.protocolo === denunciaId || cleanProtocolKey(d.protocolo) === cleanProtocolKey(denunciaId)) {
+      targetId = d.id;
       targetProtocol = d.protocolo;
       const anteriores = d.historico_feedbacks || [];
       const acoesAnteriores = d.historico_acoes || [];
@@ -1194,11 +1637,14 @@ export const salvarFeedbackEscola = (
         responsavel: feedbackCompleto.autor
       };
 
+      nextHistoricoFeedbacks = [...anteriores, feedbackCompleto];
+      nextHistoricoAcoes = [...acoesAnteriores, novaAcao];
+
       return {
         ...d,
         feedback_escola: feedbackCompleto,
-        historico_feedbacks: [...anteriores, feedbackCompleto],
-        historico_acoes: [...acoesAnteriores, novaAcao]
+        historico_feedbacks: nextHistoricoFeedbacks,
+        historico_acoes: nextHistoricoAcoes
       };
     }
     return d;
@@ -1207,13 +1653,20 @@ export const salvarFeedbackEscola = (
   try {
     localStorage.setItem(STORAGE_KEY_DENUNCIAS, JSON.stringify(updated));
   } catch {}
-  addLog('FEEDBACK_ESCOLA_REGISTRADO', `Feedback registrado na denúncia ${denunciaId} (${feedbackCompleto.titulo})`);
+  addLog('FEEDBACK_ESCOLA_REGISTRADO', `Feedback registrado na denúncia ${targetId} (${feedbackCompleto.titulo})`);
 
-  // Se solicitado, registra mensagem formal no chat sigiloso do protocolo
+  // Persistir devolutiva oficial nos metadados da nuvem (para puxar em qualquer dispositivo)
+  updateLocalDenunciaExtraMetadata(targetId, targetProtocol, {
+    feedback_escola: feedbackCompleto,
+    historico_feedbacks: nextHistoricoFeedbacks,
+    historico_acoes: nextHistoricoAcoes
+  });
+
+  // Se solicitado, registra mensagem formal no chat sigiloso do protocolo (ordem correta: protocolo, remetente, texto, autorNome)
   if (notificarNoChat && targetProtocol) {
     try {
       const msgChat = `📢 [DEVOLUTIVA OFICIAL DA ESCOLA]: ${feedbackCompleto.titulo}\n\n${feedbackCompleto.mensagem}${feedbackCompleto.orientacao_ao_estudante ? `\n\n🛡️ Orientações de Segurança: ${feedbackCompleto.orientacao_ao_estudante}` : ''}`;
-      sendProtocolMessage(targetProtocol, 'coordenacao', feedbackCompleto.autor, msgChat);
+      sendProtocolMessage(targetProtocol, 'coordenacao', msgChat, feedbackCompleto.autor);
     } catch (err) {
       console.warn('[Feedback Chat Message Error]', err);
     }
@@ -1222,10 +1675,22 @@ export const salvarFeedbackEscola = (
   notifyStorageUpdated();
 
   const supabase = getSupabase();
-  if (supabase) {
-    safeSupabaseExec(() => supabase.from('denuncias').update({
-      feedback_escola: feedbackCompleto
-    }).eq('id', denunciaId));
+  if (supabase && targetId) {
+    // Registra também na tabela mediacoes_acoes para histórico relacional completo no PostgreSQL
+    safeSupabaseExec(() => supabase.from('mediacoes_acoes').insert({
+      id: generateUUID(),
+      denuncia_id: targetId,
+      autor: feedbackCompleto.autor,
+      categoria: 'Geral',
+      acao: `[DEVOLUTIVA OFICIAL • ${feedbackCompleto.status_resolucao}] ${feedbackCompleto.titulo}: ${feedbackCompleto.mensagem}`,
+      data_hora: feedbackCompleto.data_hora
+    }));
+
+    if (feedbackCompleto.status_resolucao === 'pacificado') {
+      safeSupabaseExec(() => supabase.from('denuncias').update({ status: 'Resolvido' }).eq('id', targetId));
+    } else if (feedbackCompleto.status_resolucao === 'acolhido_em_analise' || feedbackCompleto.status_resolucao === 'medidas_adotadas') {
+      safeSupabaseExec(() => supabase.from('denuncias').update({ status: 'Acolhido' }).eq('id', targetId));
+    }
   }
 
   return updated;
@@ -1241,8 +1706,13 @@ export const deleteDenuncia = (denunciaId: string): Denuncia[] => {
   const targetId = denunciaToDelete ? denunciaToDelete.id : denunciaId;
   const targetProtocol = denunciaToDelete ? denunciaToDelete.protocolo : (denunciaId.startsWith('#') || denunciaId.startsWith('STP-') ? denunciaId : undefined);
 
-  // 1. Registra imediatamente no registro permanente de exclusões (tombstones)
+  // 1. Registra imediatamente no registro permanente de exclusões (tombstones) locais e na nuvem
   recordDenunciaAsDeleted(targetId, targetProtocol);
+  const meta = getLocalGestaoMetadata();
+  if (targetId) delete meta.denunciaExtras[targetId];
+  if (targetProtocol) delete meta.denunciaExtras[cleanProtocolKey(targetProtocol)];
+  saveLocalGestaoMetadata(meta);
+  pushGestaoMetadataToSupabase(meta).catch(() => {});
 
   // 2. Filtra a lista local imediatamente para resposta instantânea da interface
   const updated = list.filter(d => 
@@ -1720,6 +2190,10 @@ export const saveInstitutionalEmails = (config: Partial<ReturnType<typeof getIns
     const current = getInstitutionalEmails();
     const updated = { ...current, ...config };
     localStorage.setItem(STORAGE_KEY_EMAILS_CONFIG, JSON.stringify(updated));
+    const meta = getLocalGestaoMetadata();
+    meta.emailsConfig = updated;
+    saveLocalGestaoMetadata(meta);
+    pushGestaoMetadataToSupabase(meta).catch(() => {});
     addLog('EMAILS_INSTITUCIONAIS_ATUALIZADOS', `Conselho: ${updated.emailConselhoTutelar} | Escola: ${updated.emailEscola}`);
   } catch (e) {
     console.error('Erro ao salvar e-mails institucionais:', e);

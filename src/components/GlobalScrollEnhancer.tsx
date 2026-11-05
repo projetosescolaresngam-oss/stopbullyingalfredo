@@ -452,9 +452,10 @@ class GlobalOverflowScrollEnhancer {
 
       // Apenas rola horizontalmente em carrosséis/barras de abas; nunca puxa scroll vertical de modais ou cartões
       if (maxScrollX > 10) {
+        const scrollContainer = parent;
         window.setTimeout(() => {
-          this.centerChildElement(parent, clickable, true, false);
-          this.updateContainerOverflowState(parent);
+          this.centerChildElement(scrollContainer, clickable, true, false);
+          this.updateContainerOverflowState(scrollContainer);
         }, 50);
         break;
       }
