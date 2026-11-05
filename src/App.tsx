@@ -28,7 +28,7 @@ import {
   SelectionSpeechReader, 
   VLibrasWidget 
 } from './components/accessibility/AccessibilityToolbar';
-import { addLog } from './services/storageService';
+import { addLog, startRealtimeCloudSync } from './services/storageService';
 import { syncEscolasFromSupabase } from './services/schoolService';
 import { recordSiteAccess } from './services/analyticsService';
 
@@ -67,8 +67,9 @@ export default function App() {
     'guia'
   ];
 
-  // Read URL hash on load and sync schools from Supabase
+  // Read URL hash on load and start real-time multi-device cloud sync
   useEffect(() => {
+    const stopRealtimeSync = startRealtimeCloudSync();
     syncEscolasFromSupabase().catch(() => {});
 
     const handleHash = () => {
@@ -105,6 +106,7 @@ export default function App() {
     window.addEventListener('keydown', handleKeyDown);
 
     return () => {
+      stopRealtimeSync();
       window.removeEventListener('hashchange', handleHash);
       window.removeEventListener('keydown', handleKeyDown);
     };

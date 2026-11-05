@@ -92,7 +92,7 @@ export const ProtocoloView: React.FC<ProtocoloViewProps> = ({
     }
   };
 
-  // Carregar denúncia e mensagens quando activeProtocol mudar + atualizar em tempo real
+  // Carregar denúncia e mensagens quando activeProtocol mudar + atualizar em tempo real da nuvem
   useEffect(() => {
     if (!activeProtocol) {
       setDenuncia(null);
@@ -101,46 +101,67 @@ export const ProtocoloView: React.FC<ProtocoloViewProps> = ({
     }
     consultarProtocolo(activeProtocol);
 
-    // Atualiza mensagens em tempo real para receber respostas humanas da gestão
-    const updateMsgs = () => {
-      if (activeProtocol) {
-        const msgs = getProtocolMessages(activeProtocol);
-        setMessages(msgs);
+    // Atualiza mensagens e status/devolutivas em tempo real direto do Supabase
+    const updateFromLocalAndCloud = async () => {
+      if (!activeProtocol) return;
+      const localFound = getDenunciaByProtocolo(activeProtocol);
+      if (localFound) setDenuncia(localFound);
+      setMessages(getProtocolMessages(activeProtocol));
+
+      const [cloudDenuncia, cloudMsgs] = await Promise.all([
+        fetchDenunciaByProtocoloFromCloud(activeProtocol),
+        fetchProtocolMessagesFromCloud(activeProtocol)
+      ]);
+      if (cloudDenuncia) {
+        setDenuncia(cloudDenuncia);
+      }
+      if (cloudMsgs && cloudMsgs.length > 0) {
+        setMessages(cloudMsgs);
       }
     };
 
-    const intervalId = setInterval(updateMsgs, 1500);
+    const intervalId = setInterval(updateFromLocalAndCloud, 3000);
 
-    const handleChatUpdate = () => {
-      updateMsgs();
+    const handleRealtimeUpdate = () => {
+      updateFromLocalAndCloud();
     };
 
-    window.addEventListener('protocol_chat_updated', handleChatUpdate);
-    window.addEventListener('storage', handleChatUpdate);
+    window.addEventListener('protocol_chat_updated', handleRealtimeUpdate);
+    window.addEventListener('storage_denuncias_updated', handleRealtimeUpdate);
+    window.addEventListener('cloud_realtime_sync', handleRealtimeUpdate);
+    window.addEventListener('storage', handleRealtimeUpdate);
 
     return () => {
       clearInterval(intervalId);
-      window.removeEventListener('protocol_chat_updated', handleChatUpdate);
-      window.removeEventListener('storage', handleChatUpdate);
+      window.removeEventListener('protocol_chat_updated', handleRealtimeUpdate);
+      window.removeEventListener('storage_denuncias_updated', handleRealtimeUpdate);
+      window.removeEventListener('cloud_realtime_sync', handleRealtimeUpdate);
+      window.removeEventListener('storage', handleRealtimeUpdate);
     };
   }, [activeProtocol]);
 
   const consultarProtocolo = async (proto: string) => {
-    let found = getDenunciaByProtocolo(proto);
-    if (!found) {
-      // Tenta buscar no banco com RPC segura de protocolo
-      found = (await fetchDenunciaByProtocoloFromCloud(proto)) || undefined;
+    const localFound = getDenunciaByProtocolo(proto);
+    if (localFound) {
+      setDenuncia(localFound);
+      setErrorMsg('');
+      setActiveProtocol(localFound.protocolo);
+      setSearchInput(localFound.protocolo);
+      setMessages(getProtocolMessages(localFound.protocolo));
     }
 
-    if (found) {
-      setDenuncia(found);
+    // Sempre busca a versão mais recente no Supabase para puxar devolutivas, mediações e acordos de qualquer dispositivo
+    const cloudFound = await fetchDenunciaByProtocoloFromCloud(proto);
+    const finalItem = cloudFound || localFound;
+
+    if (finalItem) {
+      setDenuncia(finalItem);
       setErrorMsg('');
-      setActiveProtocol(found.protocolo);
-      setSearchInput(found.protocolo);
-      const msgs = getProtocolMessages(found.protocolo);
+      setActiveProtocol(finalItem.protocolo);
+      setSearchInput(finalItem.protocolo);
+      const msgs = getProtocolMessages(finalItem.protocolo);
       setMessages(msgs);
-      // Sincroniza mensagens na nuvem se disponível
-      fetchProtocolMessagesFromCloud(found.protocolo).then(cloudMsgs => {
+      fetchProtocolMessagesFromCloud(finalItem.protocolo).then(cloudMsgs => {
         if (cloudMsgs && cloudMsgs.length > 0) {
           setMessages(cloudMsgs);
         }

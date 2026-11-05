@@ -123,11 +123,10 @@ export const DenunciaForm: React.FC<DenunciaFormProps> = ({
     return [];
   }, [escolaSelecionada, escolaOcorrenciaId]);
 
-  // Carregamento e sincronização com banco de dados
+  // Carregamento e sincronização em tempo real com banco de dados (qualquer dispositivo)
   useEffect(() => {
     const refreshList = (schools: PerfilEscola[]) => {
       setEscolasCadastradas(schools);
-      const ativa = getEscolaAtiva();
       setEscolaOcorrenciaId(currentId => {
         // Independente da escola estar marcada como ativa ou não, se ela existe na lista, preserva a seleção
         const found = schools.find(e => e.id === currentId);
@@ -155,9 +154,11 @@ export const DenunciaForm: React.FC<DenunciaFormProps> = ({
       refreshList(getEscolas());
     };
     window.addEventListener('escola_ativa_updated', updateEscolas);
+    window.addEventListener('cloud_realtime_sync', updateEscolas);
     window.addEventListener('storage', updateEscolas);
     return () => {
       window.removeEventListener('escola_ativa_updated', updateEscolas);
+      window.removeEventListener('cloud_realtime_sync', updateEscolas);
       window.removeEventListener('storage', updateEscolas);
     };
   }, []);

@@ -393,6 +393,8 @@ export async function pushGestaoMetadataToSupabase(customMeta?: GestaoCloudMetad
       stats: finalPayload,
       updated_at: new Date().toISOString()
     }, { onConflict: 'student_seed' });
+
+    broadcastCloudChange('gestao_metadata');
   } catch (err) {
     console.warn('[Supabase Push Gestao Metadata Warn]', err);
   }
@@ -696,6 +698,55 @@ export async function syncFromSupabase(managementSessionToken?: string): Promise
               needsMetadataPush = true;
             }
           }
+
+          // Reconciliar ações de mediação locais não presentes no banco
+          if (localD.acoes_mediacao && localD.acoes_mediacao.length > 0) {
+            const cloudAcoes = mediacoesByDenuncia.get(localD.id) || [];
+            if (cloudAcoes.length === 0) {
+              localD.acoes_mediacao.forEach(a => {
+                safeSupabaseExec(() => supabase.from('mediacoes_acoes').insert({
+                  id: (a.id && a.id.length >= 20) ? a.id : generateUUID(),
+                  denuncia_id: localD.id,
+                  autor: a.autor || 'Coordenação / Mediação',
+                  categoria: a.categoria || 'Geral',
+                  acao: a.acao || '',
+                  data_hora: a.dataHora || a.data_hora || new Date().toISOString()
+                }));
+              });
+            }
+          }
+
+          // Reconciliar termo de acordo local não presente no banco
+          if (localD.termo_acordo && !termoByDenuncia.has(localD.id)) {
+            const t = localD.termo_acordo;
+            safeSupabaseExec(() => supabase.from('termos_acordo_convivencia').upsert({
+              denuncia_id: localD.id,
+              mediador: t.mediador,
+              compromissos: t.compromissos,
+              reparacao_simbolica: t.reparacao_simbolica || '',
+              status: t.status,
+              firmado_em: t.firmado_em || new Date().toISOString(),
+              data_revisao: t.data_revisao || null
+            }, { onConflict: 'denuncia_id' }));
+          }
+
+          // Reconciliar check-ins locais não presentes no banco
+          if (localD.checkins_acompanhamento && localD.checkins_acompanhamento.length > 0) {
+            const cloudChks = checkinsByDenuncia.get(localD.id) || [];
+            if (cloudChks.length === 0) {
+              localD.checkins_acompanhamento.forEach(c => {
+                safeSupabaseExec(() => supabase.from('checkins_acompanhamento').insert({
+                  id: (c.id && c.id.length >= 20) ? c.id : generateUUID(),
+                  denuncia_id: localD.id,
+                  dia: c.dia,
+                  responsavel: c.responsavel,
+                  status_estudante: c.status_estudante,
+                  observacoes: c.observacoes,
+                  data: c.data || new Date().toISOString()
+                }));
+              });
+            }
+          }
         }
       }
 
@@ -863,6 +914,7 @@ async function pushSingleDenunciaToSupabase(nova: Denuncia): Promise<void> {
     if (error) {
       await supabase.from('denuncias').insert(safePayload);
     }
+    broadcastCloudChange('denuncia_saved', nova.protocolo);
   } catch (err) {
     console.warn('[Supabase pushSingleDenunciaToSupabase Warn]', err);
   }
@@ -1104,7 +1156,9 @@ export const sendProtocolMessage = (
       remetente: novaMsg.remetente,
       autor_nome: novaMsg.autorNome,
       texto: novaMsg.texto
-    }));
+    })).then(() => {
+      broadcastCloudChange('protocol_msg', novaMsg.protocolo);
+    });
   }
 
   return novaMsg;
@@ -1168,6 +1222,7 @@ export const updateDenunciaStatus = (id: string, newStatus: ComplaintStatus): De
 
   const supabase = getSupabase();
   if (supabase) {
+    const targetProto = updated.find(d => d.id === id)?.protocolo;
     (async () => {
       try {
         const sessionToken = getGestaoSessionToken();
@@ -1180,8 +1235,9 @@ export const updateDenunciaStatus = (id: string, newStatus: ComplaintStatus): De
           await safeSupabaseExec(() => supabase.from('denuncias').update({ status: newStatus }).eq('id', id));
         }
       } catch {
-        safeSupabaseExec(() => supabase.from('denuncias').update({ status: newStatus }).eq('id', id));
+        await safeSupabaseExec(() => supabase.from('denuncias').update({ status: newStatus }).eq('id', id));
       }
+      broadcastCloudChange('status_updated', targetProto);
     })();
   }
 
@@ -1426,6 +1482,7 @@ export const addMediacaoAction = (
 
   const supabase = getSupabase();
   if (supabase) {
+    const targetProto = updated.find(d => d.id === denunciaId)?.protocolo;
     safeSupabaseExec(() => supabase.from('mediacoes_acoes').insert({
       id: novaAcao.id,
       denuncia_id: denunciaId,
@@ -1433,7 +1490,9 @@ export const addMediacaoAction = (
       categoria,
       acao: acao.trim(),
       data_hora: novaAcao.dataHora
-    }));
+    })).then(() => {
+      broadcastCloudChange('mediacao_action', targetProto);
+    });
     if (statusChangedToAcolhido) {
       safeSupabaseExec(() => supabase.from('denuncias').update({ status: 'Acolhido' }).eq('id', denunciaId));
     }
@@ -1461,7 +1520,9 @@ export const toggleDenunciaSOS = (denunciaId: string, forcedValue?: boolean): De
   if (supabase) {
     const item = updated.find(d => d.id === denunciaId);
     if (item) {
-      safeSupabaseExec(() => supabase.from('denuncias').update({ is_sos: item.is_sos }).eq('id', denunciaId));
+      safeSupabaseExec(() => supabase.from('denuncias').update({ is_sos: item.is_sos }).eq('id', denunciaId)).then(() => {
+        broadcastCloudChange('sos_toggle', item.protocolo);
+      });
     }
   }
 
@@ -1507,7 +1568,9 @@ export const updateDenunciaMediacao = (
 
   const supabase = getSupabase();
   if (supabase && Object.keys(dbPartial).length > 0) {
-    safeSupabaseExec(() => supabase.from('denuncias').update(dbPartial).eq('id', denunciaId));
+    safeSupabaseExec(() => supabase.from('denuncias').update(dbPartial).eq('id', denunciaId)).then(() => {
+      broadcastCloudChange('mediacao_updated', targetProtocol);
+    });
   }
 
   return updated;
@@ -1518,8 +1581,10 @@ export const salvarTermoAcordo = (
   termo: TermoAcordoConvivencia
 ): Denuncia[] => {
   const list = getDenuncias();
+  let targetProtocol: string | undefined;
   const updated = list.map(d => {
     if (d.id === denunciaId) {
+      targetProtocol = d.protocolo;
       return {
         ...d,
         termo_acordo: termo,
@@ -1545,7 +1610,9 @@ export const salvarTermoAcordo = (
       status: termo.status,
       firmado_em: termo.firmado_em || new Date().toISOString(),
       data_revisao: termo.data_revisao || null
-    }, { onConflict: 'denuncia_id' }));
+    }, { onConflict: 'denuncia_id' })).then(() => {
+      broadcastCloudChange('termo_acordo', targetProtocol);
+    });
 
     safeSupabaseExec(() => supabase.from('denuncias').update({
       etapa_mediacao: 'acordo_firmado',
@@ -1567,8 +1634,10 @@ export const addCheckinAcompanhamento = (
     data: new Date().toISOString()
   };
 
+  let targetProtocol: string | undefined;
   const updated = list.map(d => {
     if (d.id === denunciaId) {
+      targetProtocol = d.protocolo;
       const anteriores = d.checkins_acompanhamento || [];
       return {
         ...d,
@@ -1595,7 +1664,9 @@ export const addCheckinAcompanhamento = (
       status_estudante: checkin.status_estudante,
       observacoes: checkin.observacoes,
       data: novo.data
-    }));
+    })).then(() => {
+      broadcastCloudChange('checkin', targetProtocol);
+    });
 
     safeSupabaseExec(() => supabase.from('denuncias').update({
       etapa_mediacao: 'monitoramento'
@@ -1691,6 +1762,7 @@ export const salvarFeedbackEscola = (
     } else if (feedbackCompleto.status_resolucao === 'acolhido_em_analise' || feedbackCompleto.status_resolucao === 'medidas_adotadas') {
       safeSupabaseExec(() => supabase.from('denuncias').update({ status: 'Acolhido' }).eq('id', targetId));
     }
+    broadcastCloudChange('feedback_escola', targetProtocol);
   }
 
   return updated;
@@ -1751,7 +1823,9 @@ export const deleteDenuncia = (denunciaId: string): Denuncia[] => {
   notifyStorageUpdated();
 
   // 4. Executa a purga assíncrona na nuvem (Supabase)
-  purgeDenunciaFromCloud(targetId, targetProtocol).catch(err => {
+  purgeDenunciaFromCloud(targetId, targetProtocol).then(() => {
+    broadcastCloudChange('denuncia_deleted', targetProtocol);
+  }).catch(err => {
     console.warn('[Supabase Cloud Purge Warn]', err);
   });
 
@@ -2224,3 +2298,118 @@ export const recordEmailDispatch = (
 
   addLog('EMAIL_DISPATCHED', `Tipo: ${tipoEnvio} | Enviado para: ${destinatarios.join(', ')}`);
 };
+
+// ============================================================================
+// MOTOR DE SINCRONIZAÇÃO EM TEMPO REAL MULTI-DISPOSITIVO (COMPUTADOR, TABLET, SMARTPHONE)
+// ============================================================================
+
+let liveSyncChannel: any = null;
+let liveSyncInitialized = false;
+let isSyncInFlight = false;
+
+export function broadcastCloudChange(kind: string, protocolo?: string): void {
+  try {
+    if (liveSyncChannel) {
+      liveSyncChannel.send({
+        type: 'broadcast',
+        event: 'cloud_change',
+        payload: {
+          kind,
+          protocolo: protocolo ? cleanProtocolKey(protocolo) : undefined,
+          timestamp: Date.now()
+        }
+      }).catch(() => {});
+    }
+  } catch {}
+}
+
+export function startRealtimeCloudSync(): () => void {
+  if (typeof window === 'undefined') return () => {};
+  if (liveSyncInitialized) return () => {};
+  liveSyncInitialized = true;
+
+  const supabase = getSupabase();
+
+  const triggerFastPull = async (reason?: string, targetProtocol?: string) => {
+    if (isSyncInFlight) return;
+    isSyncInFlight = true;
+    try {
+      // 1. Puxar imediatamente perfis de escolas e escola ativa para todos os visitantes
+      await syncEscolasFromSupabase();
+
+      // 2. Se o dispositivo estiver autenticado no Painel de Gestão ou na tela de gestão, sincronizar tudo
+      const sessionToken = getGestaoSessionToken();
+      const isGestaoView = window.location.hash.toLowerCase().includes('gestao');
+      if (sessionToken || isGestaoView) {
+        await syncFromSupabase(sessionToken || undefined);
+      }
+
+      // 3. Notificar componentes abertos (ProtocoloView, DenunciaForm, PainelGestao)
+      window.dispatchEvent(new CustomEvent('cloud_realtime_sync', {
+        detail: { reason: reason || 'poll', protocolo: targetProtocol, timestamp: Date.now() }
+      }));
+    } catch {} finally {
+      isSyncInFlight = false;
+    }
+  };
+
+  // Sincronização inicial imediata ao abrir o site em qualquer dispositivo
+  triggerFastPull('initial_load');
+
+  // Escutar eventos locais disparados pelo schoolService ou storageService para transmitir via WebSocket
+  const handleLocalBroadcastRequest = (e: Event) => {
+    const custom = e as CustomEvent;
+    broadcastCloudChange(custom.detail?.kind || 'schools', custom.detail?.protocolo);
+  };
+  window.addEventListener('supabase_broadcast_change', handleLocalBroadcastRequest);
+
+  // Configurar canal Realtime do Supabase (Broadcast + Postgres Changes)
+  if (supabase && isSupabaseConfigured()) {
+    try {
+      liveSyncChannel = supabase
+        .channel('stopbullying-live-sync', {
+          config: { broadcast: { self: false } }
+        })
+        .on('broadcast', { event: 'cloud_change' }, (msg: any) => {
+          const proto = msg?.payload?.protocolo;
+          triggerFastPull('realtime_broadcast', proto);
+        })
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public' },
+          () => {
+            triggerFastPull('postgres_changes');
+          }
+        )
+        .subscribe();
+    } catch (err) {
+      console.warn('[Supabase Realtime Channel Warn]', err);
+    }
+  }
+
+  // Polling rápido de alta frequência (a cada 3.5 segundos enquanto a aba estiver visível)
+  const intervalId = window.setInterval(() => {
+    if (document.visibilityState === 'visible') {
+      triggerFastPull('interval_3500ms');
+    }
+  }, 3500);
+
+  // Sincronização instantânea ao focar a janela, desbloquear o celular ou reconectar à internet
+  const handleVisibilityOrFocus = () => {
+    if (document.visibilityState === 'visible') {
+      triggerFastPull('visibility_focus');
+    }
+  };
+
+  window.addEventListener('focus', handleVisibilityOrFocus);
+  document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+  window.addEventListener('online', handleVisibilityOrFocus);
+
+  return () => {
+    window.clearInterval(intervalId);
+    window.removeEventListener('focus', handleVisibilityOrFocus);
+    document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+    window.removeEventListener('online', handleVisibilityOrFocus);
+    window.removeEventListener('supabase_broadcast_change', handleLocalBroadcastRequest);
+  };
+}

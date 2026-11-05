@@ -141,41 +141,158 @@ export const getEscolaAtiva = (): PerfilEscola => {
 };
 
 const SYSTEM_SCHOOLS_SEED = '__system_perfis_escolas_v1__';
+const STORAGE_KEY_DELETED_ESCOLAS = 'stopbullying_deleted_escolas_v1';
+const STORAGE_KEY_ESCOLAS_DIRTY = 'stopbullying_escolas_dirty_v1';
+
+function getDeletedSchoolIds(): Set<string> {
+  const set = new Set<string>(FICTITIOUS_SCHOOL_IDS);
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_DELETED_ESCOLAS);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        parsed.forEach((id: string) => {
+          if (id && id !== ESCOLA_PADRAO_ALFREDO_MACHADO.id) set.add(id);
+        });
+      }
+    }
+  } catch {}
+  return set;
+}
+
+function addDeletedSchoolId(id: string): void {
+  if (!id || id === ESCOLA_PADRAO_ALFREDO_MACHADO.id) return;
+  try {
+    const current = getDeletedSchoolIds();
+    current.add(id);
+    localStorage.setItem(STORAGE_KEY_DELETED_ESCOLAS, JSON.stringify(Array.from(current)));
+  } catch {}
+}
+
+function saveDeletedSchoolIds(ids: Iterable<string>): void {
+  try {
+    const clean = Array.from(new Set(ids)).filter(id => id && id !== ESCOLA_PADRAO_ALFREDO_MACHADO.id);
+    localStorage.setItem(STORAGE_KEY_DELETED_ESCOLAS, JSON.stringify(clean));
+  } catch {}
+}
+
+function notifyAllDevicesSchoolChange(): void {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('supabase_broadcast_change', {
+      detail: { kind: 'schools', timestamp: Date.now() }
+    }));
+  }
+}
 
 export async function pushEscolasSnapshotToSupabase(
   escolasList?: PerfilEscola[],
-  ativaIdOverride?: string
+  ativaIdOverride?: string,
+  options?: { deletedSchoolId?: string; isFullReset?: boolean }
 ): Promise<void> {
   const supabase = getSupabase();
   if (!supabase || !isSupabaseConfigured()) return;
 
-  const list = (escolasList || getEscolas()).filter(
-    (e) => e && e.id && !FICTITIOUS_SCHOOL_IDS.has(e.id)
-  );
-  const ativaId =
-    ativaIdOverride ||
-    localStorage.getItem(STORAGE_KEY_ATIVA_ID) ||
-    list.find((e) => e.ativa)?.id ||
-    ESCOLA_PADRAO_ALFREDO_MACHADO.id;
-
   try {
-    await supabase.from('estudantes_gamificacao').upsert(
+    if (options?.deletedSchoolId) {
+      addDeletedSchoolId(options.deletedSchoolId);
+    }
+
+    const localDeleted = getDeletedSchoolIds();
+    const localList = (escolasList || getEscolas()).filter(
+      (e) => e && e.id && !localDeleted.has(e.id)
+    );
+
+    // Buscar estado atual na nuvem para mesclar sem perder escolas criadas em outro dispositivo
+    const { data: existingRow } = await supabase
+      .from('estudantes_gamificacao')
+      .select('stats')
+      .eq('student_seed', SYSTEM_SCHOOLS_SEED)
+      .maybeSingle();
+
+    const cloudStats = (existingRow?.stats || {}) as {
+      escolas?: PerfilEscola[];
+      ativaId?: string;
+      deletedIds?: string[];
+    };
+
+    const mergedDeletedSet = new Set<string>([
+      ...Array.from(localDeleted),
+      ...(Array.isArray(cloudStats.deletedIds) ? cloudStats.deletedIds : [])
+    ]);
+    if (options?.deletedSchoolId) {
+      mergedDeletedSet.add(options.deletedSchoolId);
+    }
+    // Se uma escola acabou de ser criada/editada localmente, garante que não esteja na lista de excluídas
+    localList.forEach(e => {
+      if (e.id !== options?.deletedSchoolId && !FICTITIOUS_SCHOOL_IDS.has(e.id)) {
+        mergedDeletedSet.delete(e.id);
+      }
+    });
+
+    const mergedMap = new Map<string, PerfilEscola>();
+
+    if (!options?.isFullReset && Array.isArray(cloudStats.escolas)) {
+      cloudStats.escolas.forEach(rem => {
+        if (rem && rem.id && !mergedDeletedSet.has(rem.id) && !FICTITIOUS_SCHOOL_IDS.has(rem.id)) {
+          mergedMap.set(rem.id, rem);
+        }
+      });
+    }
+
+    // Alterações locais prevalecem sobre o snapshot anterior
+    localList.forEach(loc => {
+      if (loc && loc.id && !mergedDeletedSet.has(loc.id) && !FICTITIOUS_SCHOOL_IDS.has(loc.id)) {
+        mergedMap.set(loc.id, loc);
+      }
+    });
+
+    if (!mergedMap.has(ESCOLA_PADRAO_ALFREDO_MACHADO.id)) {
+      mergedMap.set(ESCOLA_PADRAO_ALFREDO_MACHADO.id, ESCOLA_PADRAO_ALFREDO_MACHADO);
+    }
+
+    let finalAtivaId =
+      ativaIdOverride ||
+      localStorage.getItem(STORAGE_KEY_ATIVA_ID) ||
+      cloudStats.ativaId ||
+      localList.find((e) => e.ativa)?.id ||
+      ESCOLA_PADRAO_ALFREDO_MACHADO.id;
+
+    if (!mergedMap.has(finalAtivaId)) {
+      finalAtivaId = ESCOLA_PADRAO_ALFREDO_MACHADO.id;
+    }
+
+    const finalList = Array.from(mergedMap.values()).map(esc => ({
+      ...esc,
+      ativa: esc.id === finalAtivaId
+    }));
+
+    saveDeletedSchoolIds(mergedDeletedSet);
+    localStorage.setItem(STORAGE_KEY_ESCOLAS, JSON.stringify(finalList));
+    localStorage.setItem(STORAGE_KEY_ATIVA_ID, finalAtivaId);
+
+    const { error } = await supabase.from('estudantes_gamificacao').upsert(
       {
         student_seed: SYSTEM_SCHOOLS_SEED,
         student_code: 'SYSTEM_PERFIS_ESCOLAS',
         current_level: 1,
-        current_xp: list.length,
+        current_xp: finalList.length,
         next_level_xp: 100,
         level_title: 'Gestão Multi-Escolas',
         stats: {
-          escolas: list,
-          ativaId,
+          escolas: finalList,
+          ativaId: finalAtivaId,
+          deletedIds: Array.from(mergedDeletedSet),
           updatedAt: new Date().toISOString(),
         },
         updated_at: new Date().toISOString(),
       },
       { onConflict: 'student_seed' }
     );
+
+    if (!error) {
+      localStorage.removeItem(STORAGE_KEY_ESCOLAS_DIRTY);
+      notifyAllDevicesSchoolChange();
+    }
   } catch (err) {
     console.warn('[Supabase Schools Snapshot Sync Warn]', err);
   }
@@ -196,11 +313,12 @@ export const setEscolaAtiva = (escolaId: string): PerfilEscola => {
   try {
     localStorage.setItem(STORAGE_KEY_ESCOLAS, JSON.stringify(updatedList));
     localStorage.setItem(STORAGE_KEY_ATIVA_ID, escolaId);
+    localStorage.setItem(STORAGE_KEY_ESCOLAS_DIRTY, 'true');
   } catch (err) {
     console.error('Erro ao salvar escola ativa:', err);
   }
 
-  // Sincroniza a escola ativa com o banco de dados Supabase
+  // Sincroniza imediatamente a escola ativa com o banco de dados Supabase e notifica todos os dispositivos
   pushEscolasSnapshotToSupabase(updatedList, escolaId).catch(() => {});
 
   const supabase = getSupabase();
@@ -365,12 +483,14 @@ export const salvarEscola = (
     localStorage.setItem(STORAGE_KEY_ESCOLAS, JSON.stringify(novaLista));
   }
 
+  localStorage.setItem(STORAGE_KEY_ESCOLAS_DIRTY, 'true');
+
   window.dispatchEvent(new CustomEvent('escola_ativa_updated', {
     detail: { escolaAtiva: getEscolaAtiva() }
   }));
   window.dispatchEvent(new Event('storage'));
 
-  // 1. Sincroniza snapshot completo em estudantes_gamificacao (funciona mesmo sem tabela perfis_escolas)
+  // 1. Sincroniza snapshot completo em estudantes_gamificacao e transmite via Broadcast para todos os dispositivos
   pushEscolasSnapshotToSupabase(novaLista).catch(() => {});
 
   // 2. Sincroniza também na tabela dedicada perfis_escolas / RPC se existir
@@ -432,18 +552,29 @@ export const excluirEscola = (escolaId: string): boolean => {
   const escolaParaRemover = escolas.find(e => e.id === escolaId);
   if (!escolaParaRemover) return false;
 
+  addDeletedSchoolId(escolaId);
   const novaLista = escolas.filter(e => e.id !== escolaId);
   localStorage.setItem(STORAGE_KEY_ESCOLAS, JSON.stringify(novaLista));
+  localStorage.setItem(STORAGE_KEY_ESCOLAS_DIRTY, 'true');
 
   // Se a escola removida era a ativa, ativa a primeira remanescente
-  if (escolaParaRemover.ativa) {
-    setEscolaAtiva(novaLista[0].id);
-  } else {
-    pushEscolasSnapshotToSupabase(novaLista).catch(() => {});
-    window.dispatchEvent(new CustomEvent('escola_ativa_updated', {
-      detail: { escolaAtiva: getEscolaAtiva() }
-    }));
-  }
+  const nextAtivaId = escolaParaRemover.ativa
+    ? novaLista[0].id
+    : (localStorage.getItem(STORAGE_KEY_ATIVA_ID) || novaLista[0].id);
+
+  const listaComAtiva = novaLista.map(e => ({
+    ...e,
+    ativa: e.id === nextAtivaId
+  }));
+  localStorage.setItem(STORAGE_KEY_ESCOLAS, JSON.stringify(listaComAtiva));
+  localStorage.setItem(STORAGE_KEY_ATIVA_ID, nextAtivaId);
+
+  pushEscolasSnapshotToSupabase(listaComAtiva, nextAtivaId, { deletedSchoolId: escolaId }).catch(() => {});
+
+  window.dispatchEvent(new CustomEvent('escola_ativa_updated', {
+    detail: { escolaAtiva: getEscolaAtiva() }
+  }));
+  window.dispatchEvent(new Event('storage'));
 
   // Sincronização com Supabase (exclusão remota via RPC autenticada / tabela)
   const supabase = getSupabase();
@@ -473,15 +604,22 @@ export const syncEscolasFromSupabase = async (): Promise<PerfilEscola[]> => {
   if (!supabase || !isSupabaseConfigured()) return getEscolas();
 
   try {
+    const isLocalDirty = localStorage.getItem(STORAGE_KEY_ESCOLAS_DIRTY) === 'true';
     const localList = getEscolas();
     const map = new Map<string, PerfilEscola>();
-    localList.forEach(e => {
-      if (e && e.id && !FICTITIOUS_SCHOOL_IDS.has(e.id)) {
-        map.set(e.id, e);
-      }
-    });
+
+    // Se houver mudança local ainda não confirmada, preserva os itens locais como base
+    if (isLocalDirty) {
+      localList.forEach(e => {
+        if (e && e.id && !FICTITIOUS_SCHOOL_IDS.has(e.id)) {
+          map.set(e.id, e);
+        }
+      });
+    }
 
     let remoteAtivaId: string | undefined;
+    let cloudSnapshotExists = false;
+    const deletedSet = getDeletedSchoolIds();
 
     // 1. Puxar snapshot universal da gestão (estudantes_gamificacao -> __system_perfis_escolas_v1__)
     try {
@@ -492,13 +630,24 @@ export const syncEscolasFromSupabase = async (): Promise<PerfilEscola[]> => {
         .maybeSingle();
 
       if (!snapErr && snapRow && snapRow.stats) {
-        const statsObj = snapRow.stats as { escolas?: PerfilEscola[]; ativaId?: string };
-        if (statsObj.ativaId && !FICTITIOUS_SCHOOL_IDS.has(statsObj.ativaId)) {
+        const statsObj = snapRow.stats as {
+          escolas?: PerfilEscola[];
+          ativaId?: string;
+          deletedIds?: string[];
+        };
+        if (Array.isArray(statsObj.deletedIds)) {
+          statsObj.deletedIds.forEach(id => {
+            if (id && id !== ESCOLA_PADRAO_ALFREDO_MACHADO.id) deletedSet.add(id);
+          });
+          saveDeletedSchoolIds(deletedSet);
+        }
+        if (statsObj.ativaId && !deletedSet.has(statsObj.ativaId)) {
           remoteAtivaId = statsObj.ativaId;
         }
-        if (Array.isArray(statsObj.escolas)) {
+        if (Array.isArray(statsObj.escolas) && statsObj.escolas.length > 0) {
+          cloudSnapshotExists = true;
           statsObj.escolas.forEach((rem) => {
-            if (!rem || !rem.id || FICTITIOUS_SCHOOL_IDS.has(rem.id)) return;
+            if (!rem || !rem.id || deletedSet.has(rem.id)) return;
             map.set(rem.id, {
               ...rem,
               ativa: remoteAtivaId ? rem.id === remoteAtivaId : Boolean(rem.ativa),
@@ -516,8 +665,9 @@ export const syncEscolasFromSupabase = async (): Promise<PerfilEscola[]> => {
         .order('criada_em', { ascending: true });
 
       if (!error && Array.isArray(data) && data.length > 0) {
+        cloudSnapshotExists = true;
         data.forEach((remote: any) => {
-          if (!remote || !remote.id || FICTITIOUS_SCHOOL_IDS.has(remote.id)) return;
+          if (!remote || !remote.id || deletedSet.has(remote.id)) return;
           if (remote.ativa) {
             remoteAtivaId = remote.id;
           }
@@ -549,10 +699,37 @@ export const syncEscolasFromSupabase = async (): Promise<PerfilEscola[]> => {
       }
     } catch {}
 
-    const finalAtivaId =
+    // Se a nuvem ainda não tinha snapshot ou se este navegador é do gestor com escolas novas locais
+    const hasGestaoToken = Boolean(getGestaoSessionToken());
+    if (!cloudSnapshotExists || isLocalDirty || hasGestaoToken) {
+      let localHasUnsyncedSchool = false;
+      localList.forEach(loc => {
+        if (loc && loc.id && !deletedSet.has(loc.id)) {
+          if (!map.has(loc.id)) {
+            map.set(loc.id, loc);
+            localHasUnsyncedSchool = true;
+          }
+        }
+      });
+
+      if (!cloudSnapshotExists || isLocalDirty || localHasUnsyncedSchool) {
+        const pushAtiva = remoteAtivaId || localStorage.getItem(STORAGE_KEY_ATIVA_ID) || ESCOLA_PADRAO_ALFREDO_MACHADO.id;
+        pushEscolasSnapshotToSupabase(Array.from(map.values()), pushAtiva).catch(() => {});
+      }
+    }
+
+    if (!map.has(ESCOLA_PADRAO_ALFREDO_MACHADO.id)) {
+      map.set(ESCOLA_PADRAO_ALFREDO_MACHADO.id, ESCOLA_PADRAO_ALFREDO_MACHADO);
+    }
+
+    let finalAtivaId =
       remoteAtivaId ||
       localStorage.getItem(STORAGE_KEY_ATIVA_ID) ||
       ESCOLA_PADRAO_ALFREDO_MACHADO.id;
+
+    if (!map.has(finalAtivaId)) {
+      finalAtivaId = ESCOLA_PADRAO_ALFREDO_MACHADO.id;
+    }
 
     const merged = Array.from(map.values()).map((esc) => ({
       ...esc,
@@ -560,16 +737,19 @@ export const syncEscolasFromSupabase = async (): Promise<PerfilEscola[]> => {
     }));
 
     if (merged.length > 0) {
-      localStorage.setItem(STORAGE_KEY_ESCOLAS, JSON.stringify(merged));
+      const prevRaw = localStorage.getItem(STORAGE_KEY_ESCOLAS);
+      const prevAtiva = localStorage.getItem(STORAGE_KEY_ATIVA_ID);
+      const nextRaw = JSON.stringify(merged);
+
+      localStorage.setItem(STORAGE_KEY_ESCOLAS, nextRaw);
       localStorage.setItem(STORAGE_KEY_ATIVA_ID, finalAtivaId);
 
-      // Garante que qualquer escola cadastrada localmente também suba para o banco
-      pushEscolasSnapshotToSupabase(merged, finalAtivaId).catch(() => {});
-
-      window.dispatchEvent(new CustomEvent('escola_ativa_updated', {
-        detail: { escolaAtiva: getEscolaAtiva() }
-      }));
-      window.dispatchEvent(new Event('storage'));
+      if (prevRaw !== nextRaw || prevAtiva !== finalAtivaId) {
+        window.dispatchEvent(new CustomEvent('escola_ativa_updated', {
+          detail: { escolaAtiva: getEscolaAtiva() }
+        }));
+        window.dispatchEvent(new Event('storage'));
+      }
       return merged;
     }
   } catch (err) {
@@ -595,7 +775,8 @@ export const restaurarEscolasPadrao = (): PerfilEscola[] => {
   const listaInicial = [ESCOLA_PADRAO_ALFREDO_MACHADO];
   localStorage.setItem(STORAGE_KEY_ESCOLAS, JSON.stringify(listaInicial));
   localStorage.setItem(STORAGE_KEY_ATIVA_ID, ESCOLA_PADRAO_ALFREDO_MACHADO.id);
-  pushEscolasSnapshotToSupabase(listaInicial, ESCOLA_PADRAO_ALFREDO_MACHADO.id).catch(() => {});
+  localStorage.setItem(STORAGE_KEY_ESCOLAS_DIRTY, 'true');
+  pushEscolasSnapshotToSupabase(listaInicial, ESCOLA_PADRAO_ALFREDO_MACHADO.id, { isFullReset: true }).catch(() => {});
 
   window.dispatchEvent(new CustomEvent('escola_ativa_updated', {
     detail: { escolaAtiva: ESCOLA_PADRAO_ALFREDO_MACHADO }

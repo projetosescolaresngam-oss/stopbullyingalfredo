@@ -304,30 +304,36 @@ export const ModalMediacao: React.FC<ModalMediacaoProps> = ({
       });
     };
 
-    reloadMsgs();
-    fetchProtocolMessagesFromCloud(caso.protocolo).then((cloudMsgs) => {
-      if (cloudMsgs && cloudMsgs.length > 0) {
-        setChatMessages((prev) => {
-          if (prev.length === cloudMsgs.length && prev[prev.length - 1]?.id === cloudMsgs[cloudMsgs.length - 1]?.id) {
-            return prev;
-          }
-          return cloudMsgs;
-        });
-      }
-    });
+    const syncCloudMsgs = () => {
+      reloadMsgs();
+      fetchProtocolMessagesFromCloud(caso.protocolo).then((cloudMsgs) => {
+        if (cloudMsgs && cloudMsgs.length > 0) {
+          setChatMessages((prev) => {
+            if (prev.length === cloudMsgs.length && prev[prev.length - 1]?.id === cloudMsgs[cloudMsgs.length - 1]?.id) {
+              return prev;
+            }
+            return cloudMsgs;
+          });
+        }
+      });
+    };
 
-    const intervalId = setInterval(reloadMsgs, 2500);
+    syncCloudMsgs();
+
+    const intervalId = setInterval(syncCloudMsgs, 2500);
 
     const handleChatUpdate = () => {
-      reloadMsgs();
+      syncCloudMsgs();
     };
 
     window.addEventListener('protocol_chat_updated', handleChatUpdate);
+    window.addEventListener('cloud_realtime_sync', handleChatUpdate);
     window.addEventListener('storage', handleChatUpdate);
 
     return () => {
       clearInterval(intervalId);
       window.removeEventListener('protocol_chat_updated', handleChatUpdate);
+      window.removeEventListener('cloud_realtime_sync', handleChatUpdate);
       window.removeEventListener('storage', handleChatUpdate);
     };
   }, [caso.protocolo]);
